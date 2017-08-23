@@ -1,4 +1,5 @@
 [![Build status (travis-ci.com)](https://img.shields.io/travis/mity/mustache4c/master.svg?label=linux%20build)](https://travis-ci.org/mity/mustache4c)
+[![Build status (appveyor.com)](https://img.shields.io/appveyor/ci/mity/mustache4c/master.svg?label=windows%20build)](https://ci.appveyor.com/project/mity/mustache4c/branch/master)
 [![Codecov](https://img.shields.io/codecov/c/github/mity/mustache4c/master.svg?label=code%20coverage)](https://codecov.io/github/mity/mustache4c)
 
 # Mustache4C Readme
