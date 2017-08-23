@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>  /* for off_t */
 
 
 #define MUSTACHE_DEFAULTOPENER      "{{"
@@ -524,7 +525,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     current_node = provider->get_root(provider_data);
 
     while(1) {
-        unsigned opcode = mustache_decode_num(insns, off, &off);
+        unsigned opcode = (unsigned) mustache_decode_num(insns, off, &off);
 
         if(opcode == MUSTACHE_OP_EXIT)
             break;
@@ -532,7 +533,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         switch(opcode) {
         case MUSTACHE_OP_LITERAL:
             {
-                size_t n = mustache_decode_num(insns, off, &off);
+                size_t n = (size_t) mustache_decode_num(insns, off, &off);
                 if(renderer->out_verbatim((const char*)(insns + off), n, renderer_data) != 0)
                     return -1;
                 off += n;
@@ -541,7 +542,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 
         case MUSTACHE_OP_GETNAMED:
             {
-                size_t n = mustache_decode_num(insns, off, &off);
+                size_t n = (size_t) mustache_decode_num(insns, off, &off);
                 reg_node = provider->get_named(current_node, (const char*)(insns + off), n, provider_data);
                 off += n;
                 break;
