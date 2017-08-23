@@ -25,6 +25,7 @@ after_success:
     # Create coverage data
     - lcov --directory . --capture --output-file coverage.info # capture coverage info
     - lcov --remove coverage.info '/usr/*' --output-file coverage.info # filter out system
+    - lcov --remove coverage.info 'test/*' --output-file coverage.info # filter out unit test suite
     - lcov --list coverage.info # debug info
     # Upload coverage data to CodeCov
     - bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
