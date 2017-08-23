@@ -1,3 +1,5 @@
+[![Build status (travis-ci.com)](https://img.shields.io/travis/mity/mustache4c/master.svg?label=linux%20build)](https://travis-ci.org/mity/mustache4c)
+[![Codecov](https://img.shields.io/codecov/c/github/mity/mustache4c/master.svg?label=code%20coverage)](https://codecov.io/github/mity/mustache4c)
 
 # Mustache4C Readme
 
