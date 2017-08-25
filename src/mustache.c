@@ -38,12 +38,112 @@
 #define MUSTACHE_MAXCLOSERLENGTH    32
 
 
+/**********************
+ *** Growing Buffer ***
+ **********************/
+
+typedef struct MUSTACHE_BUFFER {
+    uint8_t* data;
+    size_t n;
+    size_t alloc;
+} MUSTACHE_BUFFER;
+
+static void
+mustache_buffer_free(MUSTACHE_BUFFER* buf)
+{
+    free(buf->data);
+}
+
+static int
+mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t n)
+{
+    if(buf->n + n > buf->alloc) {
+        size_t new_alloc = (buf->n + n) * 2;
+        uint8_t* new_data;
+
+        new_data = (uint8_t*) realloc(buf->data, new_alloc);
+        if(new_data == NULL)
+            return -1;
+
+        buf->data = new_data;
+        buf->alloc = new_alloc;
+    }
+
+    if(off < buf->n)
+        memmove(buf->data + off + n, buf->data + off, buf->n - off);
+
+    memcpy(buf->data + off, data, n);
+    buf->n += n;
+    return 0;
+}
+
+static int
+mustache_buffer_append(MUSTACHE_BUFFER* buf, const void* data, size_t n)
+{
+    return mustache_buffer_insert(buf, buf->n, data, n);
+}
+
+static int
+mustache_buffer_insert_num(MUSTACHE_BUFFER* buf, off_t off, uint64_t num)
+{
+    uint8_t tmp[16];
+    size_t n = 0;
+
+    while(num >= 0x80) {
+        tmp[15 - n++] = 0x80 | (num & 0x7f);
+        num = num >> 7;
+    }
+    tmp[15 - n++] = num;
+
+    return mustache_buffer_insert(buf, off, tmp+16-n, n);
+}
+
+static int
+mustache_buffer_append_num(MUSTACHE_BUFFER* buf, uint64_t num)
+{
+    return mustache_buffer_insert_num(buf, buf->n, num);
+}
+
+static uint64_t
+mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
+{
+    uint64_t num = 0;
+
+    while(data[off] >= 0x80) {
+        num = num << 7;
+        num |= (data[off++] & 0x7f);
+    }
+
+    num |= data[off++];
+
+    *p_off = off;
+    return num;
+}
+
+
+/***************************
+ *** Parsing & Compiling ***
+ ***************************/
+
 #define MUSTACHE_ISANYOF2(ch, ch1, ch2)            ((ch) == (ch1) || (ch) == (ch2))
 #define MUSTACHE_ISANYOF4(ch, ch1, ch2, ch3, ch4)  ((ch) == (ch1) || (ch) == (ch2) || (ch) == (ch3) || (ch) == (ch4))
 
 #define MUSTACHE_ISWHITESPACE(ch)   MUSTACHE_ISANYOF4((ch), ' ', '\t', '\v', '\f')
 #define MUSTACHE_ISNEWLINE(ch)      MUSTACHE_ISANYOF2((ch), '\r', '\n')
 
+/* Keep in sync with MUSTACHE_ERR_xxx constants. */
+static const char* mustache_err_messages[] = {
+    "Success.",
+    "Tag opener has no closer.",
+    "Tag closer has no opener.",
+    "Tag closer is incompatible with its opener.",
+    "Tag has no name."
+};
+
+/* For the given template, we construct list of MUSTACHE_TAGINFO structures.
+ * Along the way, we also check for any parsing errors and report them
+ * to the app.
+ */
 
 typedef enum MUSTACHE_TAGTYPE {
     MUSTACHE_TAGTYPE_NONE = 0,
@@ -57,7 +157,6 @@ typedef enum MUSTACHE_TAGTYPE {
     MUSTACHE_TAGTYPE_PARTIAL            /* {{> partial }} */
 } MUSTACHE_TAGTYPE;
 
-
 typedef struct MUSTACHE_TAGINFO {
     MUSTACHE_TAGTYPE type;
     off_t line;
@@ -68,31 +167,12 @@ typedef struct MUSTACHE_TAGINFO {
     off_t name_end;
 } MUSTACHE_TAGINFO;
 
-
-/* Keep in sync with MUSTACHE_ERR_xxx constants. */
-static const char* mustache_err_messages[] = {
-    "Success.",
-    "Tag opener has no closer.",
-    "Tag closer has no opener.",
-    "Tag closer is incompatible with its opener.",
-    "Tag has no name."
-};
-
-
-
-static void
-mustache_sys_error(int err_code, void* parser_data)
-{
-    /* noop */
-}
-
 static void
 mustache_parse_error(int err_code, const char* msg,
                     unsigned line, unsigned column, void* parser_data)
 {
     /* noop */
 }
-
 
 static int
 mustache_is_std_closer(const char* closer, size_t closer_len)
@@ -121,9 +201,7 @@ mustache_parse(const char* templ_data, size_t templ_size,
     off_t line = 1;
     off_t col = 1;
     MUSTACHE_TAGINFO current_tag;
-    MUSTACHE_TAGINFO* tags = NULL;
-    unsigned n_tags = 0;
-    unsigned n_alloced_tags = 0;
+    MUSTACHE_BUFFER tags = { 0 };
 
     current_tag.type = MUSTACHE_TAGTYPE_NONE;
 
@@ -258,23 +336,10 @@ mustache_parse(const char* templ_data, size_t templ_size,
             }
 
             /* Remember the tag info. */
-            if(n_tags >= n_alloced_tags) {
-                unsigned new_n_alloced_tags = (n_alloced_tags > 0 ? n_alloced_tags * 2 : 8);
-                MUSTACHE_TAGINFO* new_tags;
+            if(mustache_buffer_append(&tags, &current_tag, sizeof(MUSTACHE_TAGINFO)) != 0)
+                goto err;
 
-                new_tags = (MUSTACHE_TAGINFO*) realloc(tags,
-                                new_n_alloced_tags * sizeof(MUSTACHE_TAGINFO));
-                if(new_tags == NULL) {
-                    parser->sys_error(ENOMEM, parser_data);
-                    goto sys_err;
-                }
-
-                n_alloced_tags = new_n_alloced_tags;
-                tags = new_tags;
-            }
-            memcpy(&tags[n_tags], &current_tag, sizeof(MUSTACHE_TAGINFO));
             current_tag.type = MUSTACHE_TAGTYPE_NONE;
-            n_tags++;
         } else if(MUSTACHE_ISNEWLINE(templ_data[off])) {
             /* Handle end of line. */
 
@@ -303,102 +368,27 @@ mustache_parse(const char* templ_data, size_t templ_size,
     }
 
     /* Add an extra dummy tag marking end of the template. */
-    if(n_tags >= n_alloced_tags) {
-        unsigned new_n_alloced_tags = n_alloced_tags + 1;
-        MUSTACHE_TAGINFO* new_tags;
-
-        new_tags = (MUSTACHE_TAGINFO*) realloc(tags,
-                        new_n_alloced_tags * sizeof(MUSTACHE_TAGINFO));
-        if(new_tags == NULL) {
-            parser->sys_error(ENOMEM, parser_data);
-            goto sys_err;
-        }
-
-        n_alloced_tags = new_n_alloced_tags;
-        tags = new_tags;
-    }
-    tags[n_tags].type = MUSTACHE_TAGTYPE_NONE;
-    tags[n_tags].beg = templ_size;
-    n_tags++;
+    current_tag.type = MUSTACHE_TAGTYPE_NONE;
+    current_tag.beg = templ_size;
+    current_tag.end = templ_size;
+    if(mustache_buffer_append(&tags, &current_tag, sizeof(MUSTACHE_TAGINFO)) != 0)
+        goto err;
 
     /* Success? */
     if(n_errors == 0) {
-        *p_tags = tags;
-        *p_n_tags = n_tags;
+        *p_tags = (MUSTACHE_TAGINFO*) tags.data;
+        *p_n_tags = tags.n / sizeof(MUSTACHE_TAGINFO);
         return 0;
     }
 
     /* Error path. */
-sys_err:
-    free(tags);
+err:
+    mustache_buffer_free(&tags);
     *p_tags = NULL;
     *p_n_tags = 0;
     return -1;
 }
 
-
-typedef struct MUSTACHE_BUILD {
-    uint8_t* insns;
-    size_t n;
-    size_t alloc;
-} MUSTACHE_BUILD;
-
-static int
-mustache_build_append(MUSTACHE_BUILD* build,
-                      const MUSTACHE_PARSER* parser, void* parser_data,
-                      const uint8_t* data, size_t n)
-{
-    if(build->n + n > build->alloc) {
-        size_t new_alloc = (build->n + n) * 2;
-        uint8_t* new_insns;
-
-        new_insns = (uint8_t*) realloc(build->insns, new_alloc);
-        if(new_insns == NULL) {
-            parser->sys_error(ENOMEM, parser_data);
-            return -1;
-        }
-
-        build->insns = new_insns;
-        build->alloc = new_alloc;
-    }
-
-    memcpy(build->insns + build->n, data, n);
-    build->n += n;
-    return 0;
-}
-
-static int
-mustache_build_append_num(MUSTACHE_BUILD* build,
-                          const MUSTACHE_PARSER* parser, void* parser_data,
-                          uint64_t num)
-{
-    uint8_t tmp[16];
-    size_t n = 0;
-
-    while(num >= 0x80) {
-        tmp[15 - n++] = 0x80 | (num & 0x7f);
-        num = num >> 7;
-    }
-    tmp[15 - n++] = num;
-
-    return mustache_build_append(build, parser, parser_data, tmp+16-n, n);
-}
-
-static uint64_t
-mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
-{
-    uint64_t num = 0;
-
-    while(data[off] >= 0x80) {
-        num = num << 7;
-        num |= (data[off++] & 0x7f);
-    }
-
-    num |= data[off++];
-
-    *p_off = off;
-    return num;
-}
 
 #define MUSTACHE_OP_EXIT            0
 #define MUSTACHE_OP_LITERAL         1
@@ -412,10 +402,10 @@ mustache_compile(const char* templ_data, size_t templ_size,
                  const MUSTACHE_PARSER* parser, void* parser_data,
                  unsigned flags)
 {
-    static const MUSTACHE_PARSER default_parser = { mustache_sys_error, mustache_parse_error };
+    static const MUSTACHE_PARSER default_parser = { mustache_parse_error };
     MUSTACHE_TAGINFO* tags = NULL;
     unsigned n_tags;
-    MUSTACHE_BUILD build = { 0 };
+    MUSTACHE_BUFFER insns = { 0 };
     off_t off;
     MUSTACHE_TAGINFO* tag;
 
@@ -431,15 +421,13 @@ mustache_compile(const char* templ_data, size_t templ_size,
     /* Build the template */
 #define APPEND(data, n)                                                       \
         do {                                                                  \
-            if(mustache_build_append(&build, parser, parser_data,             \
-                                     (const uint8_t*)(data), (n)) != 0)       \
+            if(mustache_buffer_append(&insns, (data), (n)) != 0)              \
                 goto err;                                                     \
         } while(0)
 
 #define APPEND_NUM(num)                                                       \
         do {                                                                  \
-            if(mustache_build_append_num(&build, parser, parser_data,         \
-                                         (uint64_t)(num)) != 0)               \
+            if(mustache_buffer_append_num(&insns, (uint64_t)(num)) != 0)      \
                 goto err;                                                     \
         } while(0)
 
@@ -459,6 +447,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
             break;
 
         switch(tag->type) {
+        /* Handle var tags. */
         case MUSTACHE_TAGTYPE_VAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR2:
@@ -469,15 +458,6 @@ mustache_compile(const char* templ_data, size_t templ_size,
                         MUSTACHE_OP_OUTESCAPED : MUSTACHE_OP_OUTVERBATIM);
             break;
 
-        default:
-            break;
-        }
-
-
-        /* Handle var tags. */
-        // TODO: MUSTACHE_TAGTYPE_VAR
-        // TODO: MUSTACHE_TAGTYPE_VERBATIMVAR + MUSTACHE_TAGTYPE_VERBATIMVAR2
-
         /* Handle section tags. */
         // TODO: MUSTACHE_TAGTYPE_OPENSECTION
         // TODO: MUSTACHE_TAGTYPE_OPENSECTIONINV
@@ -485,6 +465,10 @@ mustache_compile(const char* templ_data, size_t templ_size,
 
         /* Handle partials. */
         // TODO: MUSTACHE_TAGTYPE_PARTIAL
+
+        default:
+            break;
+        }
 
         off = tag->end;
         tag++;
@@ -494,12 +478,12 @@ mustache_compile(const char* templ_data, size_t templ_size,
 
     /* Success. */
     free(tags);
-    return (MUSTACHE_TEMPLATE*) build.insns;
+    return (MUSTACHE_TEMPLATE*) insns.data;
 
     /* Error path. */
 err:
+    mustache_buffer_free(&insns);
     free(tags);
-    free(build.insns);
     return NULL;
 }
 
@@ -511,6 +495,11 @@ mustache_release(MUSTACHE_TEMPLATE* t)
 
     free(t);
 }
+
+
+/**********************************
+ *** Applying Compiled Template ***
+ **********************************/
 
 int
 mustache_process(const MUSTACHE_TEMPLATE* t,
