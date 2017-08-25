@@ -41,12 +41,15 @@ extern "C" {
 
 
 typedef struct MUSTACHE_PARSER {
-    void (*sys_error)(int /*err_code*/, void* /*parser_data*/);
     void (*parse_error)(int /*err_code*/, const char* /*msg*/,
                         unsigned /*line*/, unsigned /*column*/, void* /*parser_data*/);
 } MUSTACHE_PARSER;
 
 
+/**
+ * An interface the application has to implement, in order to output the result
+ * of template processing.
+ */
 typedef struct MUSTACHE_RENDERER {
     /**
      * Called to output the given text as it is.
@@ -57,10 +60,13 @@ typedef struct MUSTACHE_RENDERER {
 
     /**
      * Called to output the given text. Implementation has to escape it
-     * appropriately with repect to the output format. E.g. for HTML output,
+     * appropriately with respect to the output format. E.g. for HTML output,
      * "<" should be translated to "&lt;" etc.
      *
      * Non-zero return value aborts mustache_process().
+     *
+     * If no escaping is desired, it can be pointer to the same function
+     * as out_verbatim.
      */
     int (*out_escaped)(const char* /*output*/, size_t /*size*/, void* /*renderer_data*/);
 } MUSTACHE_RENDERER;
@@ -70,8 +76,8 @@ typedef struct MUSTACHE_RENDERER {
  * An interface the application has to implement, in order to feed
  * mustache_process() with data the template asks for.
  *
- * Tree hierarchy, imutable durung the mustache_process() call, is assummed.
- * Each node of the heirarchy has to be uniquely identified by some pointer.
+ * Tree hierarchy, immutable during the mustache_process() call, is assumed.
+ * Each node of the hierarchy has to be uniquely identified by some pointer.
  *
  * The mustache_process() never dereferences any of the pointers. It only
  * uses them to refer to that node when calling any data provider callback.
@@ -126,7 +132,7 @@ typedef struct MUSTACHE_TEMPLATE MUSTACHE_TEMPLATE;
  *
  * If application processes multiple input data with a single template, it is
  * recommended to cache and reuse the compiled template as much as possible,
- * as the compiling may be relatively time-consumming operation.
+ * as the compiling may be relatively time-consuming operation.
  *
  * @param templ_data Text of the template.
  * @param templ_size Length of the template text.
