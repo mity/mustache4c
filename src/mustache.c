@@ -89,7 +89,7 @@ mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t
 static inline int
 mustache_buffer_append(MUSTACHE_BUFFER* buf, const void* data, size_t n)
 {
-    return mustache_buffer_insert(buf, buf->n, data, n);
+    return mustache_buffer_insert(buf, (off_t) buf->n, data, n);
 }
 
 static int
@@ -768,7 +768,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 
         case MUSTACHE_OP_RESOLVE_setjmp:
         {
-            size_t jmp_len = mustache_decode_num(insns, off, &off);
+            size_t jmp_len = (size_t) mustache_decode_num(insns, off, &off);
             reg_failaddr = off + jmp_len;
             /* Pass through */
         }

@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <sys/types.h>  /* for off_t */
 
 
 typedef struct BUFFER {

@@ -123,7 +123,7 @@ typedef struct MUSTACHE_DATAPROVIDER {
      *
      * Non-zero return value aborts mustache_process().
      */
-    int (*dump)(void* /*node*/, int (*/*out_fn*/)(const char*, size_t, void*),
+    int (*dump)(void* /*node*/, int (* /*out_fn*/)(const char*, size_t, void*),
                 void* /*renderer_data*/, void* /*provider_data*/);
 } MUSTACHE_DATAPROVIDER;
 
