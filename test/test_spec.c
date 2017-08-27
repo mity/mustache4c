@@ -34,18 +34,36 @@ static const MUSTACHE_PARSER parser = {
  ******************************************************/
 
 static int
-out(const char* out, size_t n, void* data)
+out(const char* output, size_t n, void* data)
 {
     BUFFER* buf = (BUFFER*) data;
 
-    memcpy(buf->data + buf->n, out, n);
+    memcpy(buf->data + buf->n, output, n);
     buf->n += n;
+    return 0;
+}
+
+static int
+out_escaped(const char* output, size_t n, void* data)
+{
+    off_t i;
+
+    for(i = 0; i < n; i++) {
+        switch(output[i]) {
+            case '&':   out("&amp;", 5, data); break;
+            case '"':   out("&quot;", 6, data); break;
+            case '<':   out("&lt;", 4, data); break;
+            case '>':   out("&gt;", 4, data); break;
+            default:    out(output + i, 1, data); break;
+        }
+    }
+
     return 0;
 }
 
 static const MUSTACHE_RENDERER renderer = {
     out,
-    out     /* We don't need any output escaping here. */
+    out_escaped,
 };
 
 
