@@ -32,6 +32,15 @@
 #include <sys/types.h>  /* for off_t */
 
 
+#ifdef _MSC_VER
+    /* MSVC does not understand "inline" when building as pure C (not C++).
+     * However it understands "__inline" */
+    #ifndef __cplusplus
+        #define inline __inline
+    #endif
+#endif
+
+
 #define MUSTACHE_DEFAULTOPENER      "{{"
 #define MUSTACHE_DEFAULTCLOSER      "}}"
 #define MUSTACHE_MAXOPENERLENGTH    32
@@ -48,7 +57,7 @@ typedef struct MUSTACHE_BUFFER {
     size_t alloc;
 } MUSTACHE_BUFFER;
 
-static void
+static inline void
 mustache_buffer_free(MUSTACHE_BUFFER* buf)
 {
     free(buf->data);
@@ -77,7 +86,7 @@ mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t
     return 0;
 }
 
-static int
+static inline int
 mustache_buffer_append(MUSTACHE_BUFFER* buf, const void* data, size_t n)
 {
     return mustache_buffer_insert(buf, buf->n, data, n);
@@ -101,7 +110,7 @@ mustache_buffer_insert_num(MUSTACHE_BUFFER* buf, off_t off, uint64_t num)
     return mustache_buffer_insert(buf, off, tmp+16-n, n);
 }
 
-static int
+static inline int
 mustache_buffer_append_num(MUSTACHE_BUFFER* buf, uint64_t num)
 {
     return mustache_buffer_insert_num(buf, buf->n, num);
@@ -121,6 +130,45 @@ mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
 
     *p_off = off;
     return num;
+}
+
+
+/****************************
+ *** Stack Implementation ***
+ ****************************/
+
+typedef MUSTACHE_BUFFER MUSTACHE_STACK;
+
+static inline void
+mustache_stack_free(MUSTACHE_STACK* stack)
+{
+    mustache_buffer_free(stack);
+}
+
+static inline int
+mustache_stack_is_empty(MUSTACHE_STACK* stack)
+{
+    return (stack->n == 0);
+}
+
+static inline int
+mustache_stack_push(MUSTACHE_STACK* stack, uintptr_t item)
+{
+    return mustache_buffer_append(stack, &item, sizeof(uintptr_t));
+}
+
+static inline uintptr_t
+mustache_stack_peek(MUSTACHE_STACK* stack)
+{
+    return *((uintptr_t*)(stack->data + (stack->n - sizeof(uintptr_t))));
+}
+
+static inline uintptr_t
+mustache_stack_pop(MUSTACHE_STACK* stack)
+{
+    uintptr_t item = mustache_stack_peek(stack);
+    stack->n -= sizeof(uintptr_t);
+    return item;
 }
 
 
@@ -463,7 +511,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
     off_t off;
     MUSTACHE_TAGINFO* tag;
     MUSTACHE_BUFFER insns = { 0 };
-    MUSTACHE_BUFFER jmp_pos_stack = { 0 };
+    MUSTACHE_STACK jmp_pos_stack = { 0 };
     int done = 0;
     int success = 0;
 
@@ -497,12 +545,11 @@ mustache_compile(const char* templ_data, size_t templ_size,
 
 #define PUSH_JMP_POS()                                                                  \
         do {                                                                            \
-            if(mustache_buffer_append(&jmp_pos_stack, &insns.n, sizeof(size_t)) != 0)   \
+            if(mustache_stack_push(&jmp_pos_stack, insns.n) != 0)                       \
                 goto err;                                                               \
         } while(0)
 
-#define POP_JMP_POS()                                                                   \
-        (jmp_pos_stack.n -= sizeof(size_t), (off_t) *(size_t*)(jmp_pos_stack.data + jmp_pos_stack.n))
+#define POP_JMP_POS()       ((off_t) mustache_stack_pop(&jmp_pos_stack))
 
     off = 0;
     tag = &tags[0];
@@ -606,19 +653,15 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     off_t reg_failaddr;
     void* reg_node = NULL;
     int done = 0;
-    MUSTACHE_BUFFER node_stack = { 0 };
+    MUSTACHE_STACK node_stack = { 0 };
 
-#define PUSH_NODE()                                                                         \
-        do {                                                                                \
-            if(mustache_buffer_append(&node_stack, (void**) &reg_node, sizeof(void*)) != 0) \
-                goto err;                                                                   \
+#define PUSH_NODE()                                                         \
+        do {                                                                \
+            if(mustache_stack_push(&node_stack, (uintptr_t) reg_node) != 0) \
+                goto err;                                                   \
         } while(0)
 
-#define POP_NODE()                                                                          \
-        do {                                                                                \
-            node_stack.n -= sizeof(void*);                                                  \
-        } while(0)
-
+#define POP_NODE()          mustache_stack_pop(&node_stack)
 
     reg_node = provider->get_root(provider_data);
     PUSH_NODE();
