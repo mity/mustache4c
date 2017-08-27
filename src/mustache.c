@@ -545,15 +545,6 @@ err:
 
 /* Instruction to resolve a tag name.
  *
- *   Arg #1: Length of the tag name (NUM).
- *   Arg #2: The tag name (STR).
- *
- *   Registers: reg_node is set to the resolved node, or NULL.
- */
-#define MUSTACHE_OP_RESOLVE         2
-
-/* Instruction to resolve a tag name.
- *
  *   Arg #1: (Relative) setjmp value (NUM).
  *   Arg #2: Length of the tag name (NUM).
  *   Arg #3: The tag name (STR).
@@ -561,15 +552,31 @@ err:
  *   Registers: reg_node is set to the resolved node, or NULL.
  *              reg_failaddr is set to address where to jump.
  */
-#define MUSTACHE_OP_RESOLVE_setjmp  3
+#define MUSTACHE_OP_RESOLVE_setjmp  2
+
+/* Instruction to resolve a tag name.
+ *
+ *   Arg #1: Length of the tag name (NUM).
+ *   Arg #2: The tag name (STR).
+ *
+ *   Registers: reg_node is set to the resolved node, or NULL.
+ */
+#define MUSTACHE_OP_RESOLVE         3
+
+/* Instruction to jump if previous resolving instruction succeeded.
+ *
+ * Registers: If reg_node is NULL, continues normally.
+ *            Otherwise, program counter is changed to address in reg_failaddr.
+ */
+#define MUSTACHE_OP_ONRESOLVEFAIL   4
 
 /* Instructions to output a node.
  *
  * Registers: If it is not NULL, reg_node determines the node to output.
  *            Otherwise, it is noop.
  */
-#define MUSTACHE_OP_OUTVERBATIM     4
-#define MUSTACHE_OP_OUTESCAPED      5
+#define MUSTACHE_OP_OUTVERBATIM     5
+#define MUSTACHE_OP_OUTESCAPED      6
 
 /* Instruction to enter a node in register reg_node, i.e. to change a lookup
  * context for resolve instructions.
@@ -577,12 +584,12 @@ err:
  * Registers: If it is not NULL, reg_node is pushed to the stack.
  *            Otherwise, program counter is changed to address in reg_failaddr.
  */
-#define MUSTACHE_OP_ENTER           6
+#define MUSTACHE_OP_ENTER           7
 
 /* Instruction to leave a node. The top node in the lookup context stack is
  * popped out.
  */
-#define MUSTACHE_OP_LEAVE           7
+#define MUSTACHE_OP_LEAVE           8
 
 
 MUSTACHE_TEMPLATE*
@@ -594,6 +601,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
     MUSTACHE_TAGINFO* tags = NULL;
     unsigned n_tags;
     off_t off;
+    off_t jmp_pos;
     MUSTACHE_TAGINFO* tag;
     MUSTACHE_BUFFER insns = { 0 };
     MUSTACHE_STACK jmp_pos_stack = { 0 };
@@ -659,32 +667,26 @@ mustache_compile(const char* templ_data, size_t templ_size,
                         MUSTACHE_OP_OUTESCAPED : MUSTACHE_OP_OUTVERBATIM);
             break;
 
-        /* Handle section tags. */
         case MUSTACHE_TAGTYPE_OPENSECTION:
+        case MUSTACHE_TAGTYPE_OPENSECTIONINV:
             APPEND_NUM(MUSTACHE_OP_RESOLVE_setjmp);
             PUSH_JMP_POS();
             APPEND_NUM(tag->name_end - tag->name_beg);
             APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
-            APPEND_NUM(MUSTACHE_OP_ENTER);
+            APPEND_NUM((tag->type == MUSTACHE_TAGTYPE_OPENSECTION) ?
+                        MUSTACHE_OP_ENTER : MUSTACHE_OP_ONRESOLVEFAIL);
             break;
+
         case MUSTACHE_TAGTYPE_CLOSESECTION:
-        {
-            off_t jmp_pos;
-
             APPEND_NUM(MUSTACHE_OP_LEAVE);
-
-            /* Set jmp in MUSTACHE_OP_ENTER. */
+            /* Pass through. */
+        case MUSTACHE_TAGTYPE_CLOSESECTIONINV:
             jmp_pos = POP_JMP_POS();
             INSERT_NUM(jmp_pos, insns.n - jmp_pos);
             break;
-        }
 
-        // TODO: MUSTACHE_TAGTYPE_OPENSECTIONINV
-
-        /* Handle partials. */
         // TODO: MUSTACHE_TAGTYPE_PARTIAL
 
-        /* Handle the end-of-template. */
         case MUSTACHE_TAGTYPE_NONE:
             APPEND_NUM(MUSTACHE_OP_EXIT);
             done = 1;
@@ -786,6 +788,14 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             }
             break;
         }
+
+        case MUSTACHE_OP_ONRESOLVEFAIL:
+            if(reg_node == NULL) {
+                /* Resolve succeeded: Noop. */
+            } else {
+                off = reg_failaddr;
+            }
+            break;
 
         case MUSTACHE_OP_OUTVERBATIM:
         case MUSTACHE_OP_OUTESCAPED:
