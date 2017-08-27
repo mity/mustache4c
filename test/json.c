@@ -51,6 +51,7 @@ json_create_string(const char* input, off_t off, char** p_str)
                 case 'n':   json_append(&buf, '\n'); break;
                 case 'r':   json_append(&buf, '\r'); break;
                 case 't':   json_append(&buf, '\t'); break;
+                case '\"':  json_append(&buf, '\"'); break;
                 case '\\':  json_append(&buf, '\\'); break;
             }
             off++;
