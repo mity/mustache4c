@@ -393,13 +393,62 @@ err:
 }
 
 
+/* The compiled template is a sequence of following instruction types.
+ * The instructions have two types of arguments:
+ *  -- NUM: a number encoded with mustache_buffer_[append|insert]_num().
+ *  -- STR: a string (always preceded with a NUM denoting its length).
+ */
+
+/* Instruction denoting end of template.
+ */
 #define MUSTACHE_OP_EXIT            0
+
+/* Instruction for outputting a literal text.
+ *
+ *   Arg #1: Length of the literal string (NUM).
+ *   Arg #2: The literal string (STR).
+ */
 #define MUSTACHE_OP_LITERAL         1
+
+/* Instruction to resolve a tag name.
+ *
+ *   Arg #1: Length of the tag name (NUM).
+ *   Arg #2: The tag name (STR).
+ *
+ *   Registers: reg_node is set to the resolved node, or NULL.
+ */
 #define MUSTACHE_OP_RESOLVE         2
-#define MUSTACHE_OP_RESOLVEORJMP    3
+
+/* Instruction to resolve a tag name.
+ *
+ *   Arg #1: (Relative) setjmp value (NUM).
+ *   Arg #2: Length of the tag name (NUM).
+ *   Arg #3: The tag name (STR).
+ *
+ *   Registers: reg_node is set to the resolved node, or NULL.
+ *              reg_failaddr is set to address where to jump.
+ */
+#define MUSTACHE_OP_RESOLVE_setjmp  3
+
+/* Instructions to output a node.
+ *
+ * Registers: If it is not NULL, reg_node determines the node to output.
+ *            Otherwise, it is noop.
+ */
 #define MUSTACHE_OP_OUTVERBATIM     4
 #define MUSTACHE_OP_OUTESCAPED      5
+
+/* Instruction to enter a node in register reg_node, i.e. to change a lookup
+ * context for resolve instructions.
+ *
+ * Registers: If it is not NULL, reg_node is pushed to the stack.
+ *            Otherwise, program counter is changed to address in reg_failaddr.
+ */
 #define MUSTACHE_OP_ENTER           6
+
+/* Instruction to leave a node. The top node in the lookup context stack is
+ * popped out.
+ */
 #define MUSTACHE_OP_LEAVE           7
 
 
@@ -480,7 +529,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
 
         /* Handle section tags. */
         case MUSTACHE_TAGTYPE_OPENSECTION:
-            APPEND_NUM(MUSTACHE_OP_RESOLVEORJMP);
+            APPEND_NUM(MUSTACHE_OP_RESOLVE_setjmp);
             PUSH_JMP_POS();
             APPEND_NUM(tag->name_end - tag->name_beg);
             APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
@@ -587,7 +636,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             break;
         }
 
-        case MUSTACHE_OP_RESOLVEORJMP:
+        case MUSTACHE_OP_RESOLVE_setjmp:
         {
             size_t jmp_len = mustache_decode_num(insns, off, &off);
             reg_failaddr = off + jmp_len;
