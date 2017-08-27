@@ -188,7 +188,11 @@ static const char* mustache_err_messages[] = {
     "Tag opener has no closer.",
     "Tag closer has no opener.",
     "Tag closer is incompatible with its opener.",
-    "Tag has no name."
+    "Tag has no name.",
+    "Section-opening tag has no closer.",
+    "Section-closing tag has no opener.",
+    "Name of section-closing tag does not match corresponding section-opening tag."
+    "The section-opening is located here."
 };
 
 /* For the given template, we construct list of MUSTACHE_TAGINFO structures.
@@ -205,6 +209,7 @@ typedef enum MUSTACHE_TAGTYPE {
     MUSTACHE_TAGTYPE_OPENSECTION,       /* {{# section }} */
     MUSTACHE_TAGTYPE_OPENSECTIONINV,    /* {{^ section }} */
     MUSTACHE_TAGTYPE_CLOSESECTION,      /* {{/ section }} */
+    MUSTACHE_TAGTYPE_CLOSESECTIONINV,
     MUSTACHE_TAGTYPE_PARTIAL            /* {{> partial }} */
 } MUSTACHE_TAGTYPE;
 
@@ -236,6 +241,83 @@ mustache_is_std_closer(const char* closer, size_t closer_len)
     }
 
     return 1;
+}
+
+static int
+mustache_validate_sections(const char* templ_data, MUSTACHE_BUFFER* tags_buffer,
+                           const MUSTACHE_PARSER* parser, void* parser_data)
+{
+    MUSTACHE_TAGINFO* tags = (MUSTACHE_TAGINFO*) tags_buffer->data;
+    unsigned n_tags = tags_buffer->n / sizeof(MUSTACHE_TAGINFO);
+    unsigned i;
+    MUSTACHE_STACK section_stack = { 0 };
+    MUSTACHE_TAGINFO* opener;
+    int n_errors = 0;
+    int ret = -1;
+
+    for(i = 0; i < n_tags; i++) {
+        switch(tags[i].type) {
+        case MUSTACHE_TAGTYPE_OPENSECTION:
+        case MUSTACHE_TAGTYPE_OPENSECTIONINV:
+            if(mustache_stack_push(&section_stack, (uintptr_t) &tags[i]) != 0)
+                goto err;
+            break;
+
+        case MUSTACHE_TAGTYPE_CLOSESECTION:
+        case MUSTACHE_TAGTYPE_CLOSESECTIONINV:
+            if(mustache_stack_is_empty(&section_stack)) {
+                parser->parse_error(MUSTACHE_ERR_DANGLINGSECTIONCLOSER,
+                        mustache_err_messages[MUSTACHE_ERR_DANGLINGSECTIONCLOSER],
+                        (unsigned)tags[i].line, (unsigned)tags[i].col,
+                        parser_data);
+                n_errors++;
+            } else {
+                opener = (MUSTACHE_TAGINFO*) mustache_stack_pop(&section_stack);
+
+                if(opener->name_end - opener->name_beg != tags[i].name_end - tags[i].name_beg  ||
+                   strncmp(templ_data + opener->name_beg,
+                           templ_data + tags[i].name_beg,
+                           opener->name_end - opener->name_beg) != 0)
+                {
+                    parser->parse_error(MUSTACHE_ERR_SECTIONNAMEMISMATCH,
+                            mustache_err_messages[MUSTACHE_ERR_SECTIONNAMEMISMATCH],
+                            (unsigned)tags[i].line, (unsigned)tags[i].col,
+                            parser_data);
+                    parser->parse_error(MUSTACHE_ERR_SECTIONOPENERHERE,
+                            mustache_err_messages[MUSTACHE_ERR_SECTIONOPENERHERE],
+                            (unsigned)opener->line, (unsigned)opener->col,
+                            parser_data);
+                    n_errors++;
+                }
+
+                if(opener->type == MUSTACHE_TAGTYPE_OPENSECTIONINV)
+                    tags[i].type = MUSTACHE_TAGTYPE_CLOSESECTIONINV;
+            }
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    if(!mustache_stack_is_empty(&section_stack)) {
+        while(!mustache_stack_is_empty(&section_stack)) {
+            opener = (MUSTACHE_TAGINFO*) mustache_stack_pop(&section_stack);
+
+            parser->parse_error(MUSTACHE_ERR_DANGLINGSECTIONOPENER,
+                    mustache_err_messages[MUSTACHE_ERR_DANGLINGSECTIONOPENER],
+                    (unsigned)opener->line, (unsigned)opener->col,
+                    parser_data);
+            n_errors++;
+        }
+    }
+
+    if(n_errors == 0)
+        ret = 0;
+
+err:
+    mustache_stack_free(&section_stack);
+    return ret;
 }
 
 static int
@@ -417,6 +499,9 @@ mustache_parse(const char* templ_data, size_t templ_size,
             col++;
         }
     }
+
+    if(mustache_validate_sections(templ_data, &tags, parser, parser_data) != 0)
+        goto err;
 
     /* Add an extra dummy tag marking end of the template. */
     current_tag.type = MUSTACHE_TAGTYPE_NONE;
