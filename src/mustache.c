@@ -89,11 +89,14 @@ mustache_buffer_insert_num(MUSTACHE_BUFFER* buf, off_t off, uint64_t num)
     uint8_t tmp[16];
     size_t n = 0;
 
-    while(num >= 0x80) {
-        tmp[15 - n++] = 0x80 | (num & 0x7f);
+    tmp[15 - n++] = num & 0x7f;
+
+    while(1) {
         num = num >> 7;
+        if(num == 0)
+            break;
+        tmp[15 - n++] = 0x80 | (num & 0x7f);
     }
-    tmp[15 - n++] = num;
 
     return mustache_buffer_insert(buf, off, tmp+16-n, n);
 }
@@ -110,8 +113,8 @@ mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
     uint64_t num = 0;
 
     while(data[off] >= 0x80) {
-        num = num << 7;
         num |= (data[off++] & 0x7f);
+        num = num << 7;
     }
 
     num |= data[off++];
@@ -392,9 +395,12 @@ err:
 
 #define MUSTACHE_OP_EXIT            0
 #define MUSTACHE_OP_LITERAL         1
-#define MUSTACHE_OP_GETNAMED        2
-#define MUSTACHE_OP_OUTVERBATIM     3
-#define MUSTACHE_OP_OUTESCAPED      4
+#define MUSTACHE_OP_RESOLVE         2
+#define MUSTACHE_OP_RESOLVEORJMP    3
+#define MUSTACHE_OP_OUTVERBATIM     4
+#define MUSTACHE_OP_OUTESCAPED      5
+#define MUSTACHE_OP_ENTER           6
+#define MUSTACHE_OP_LEAVE           7
 
 
 MUSTACHE_TEMPLATE*
@@ -405,9 +411,12 @@ mustache_compile(const char* templ_data, size_t templ_size,
     static const MUSTACHE_PARSER default_parser = { mustache_parse_error };
     MUSTACHE_TAGINFO* tags = NULL;
     unsigned n_tags;
-    MUSTACHE_BUFFER insns = { 0 };
     off_t off;
     MUSTACHE_TAGINFO* tag;
+    MUSTACHE_BUFFER insns = { 0 };
+    MUSTACHE_BUFFER jmp_pos_stack = { 0 };
+    int done = 0;
+    int success = 0;
 
     if(parser == NULL)
         parser = &default_parser;
@@ -419,17 +428,32 @@ mustache_compile(const char* templ_data, size_t templ_size,
     // TODO: Check correctness (compatibility of respective section openings and closings.)
 
     /* Build the template */
-#define APPEND(data, n)                                                       \
-        do {                                                                  \
-            if(mustache_buffer_append(&insns, (data), (n)) != 0)              \
-                goto err;                                                     \
+#define APPEND(data, n)                                                                 \
+        do {                                                                            \
+            if(mustache_buffer_append(&insns, (data), (n)) != 0)                        \
+                goto err;                                                               \
         } while(0)
 
-#define APPEND_NUM(num)                                                       \
-        do {                                                                  \
-            if(mustache_buffer_append_num(&insns, (uint64_t)(num)) != 0)      \
-                goto err;                                                     \
+#define APPEND_NUM(num)                                                                 \
+        do {                                                                            \
+            if(mustache_buffer_append_num(&insns, (uint64_t)(num)) != 0)                \
+                goto err;                                                               \
         } while(0)
+
+#define INSERT_NUM(pos, num)                                                            \
+        do {                                                                            \
+            if(mustache_buffer_insert_num(&insns, (pos), (uint64_t)(num)) != 0)         \
+                goto err;                                                               \
+        } while(0)
+
+#define PUSH_JMP_POS()                                                                  \
+        do {                                                                            \
+            if(mustache_buffer_append(&jmp_pos_stack, &insns.n, sizeof(size_t)) != 0)   \
+                goto err;                                                               \
+        } while(0)
+
+#define POP_JMP_POS()                                                                   \
+        (jmp_pos_stack.n -= sizeof(size_t), (off_t) *(size_t*)(jmp_pos_stack.data + jmp_pos_stack.n))
 
     off = 0;
     tag = &tags[0];
@@ -442,16 +466,12 @@ mustache_compile(const char* templ_data, size_t templ_size,
             off = tag->beg;
         }
 
-        /* Handle the end-of-template. */
-        if(tag->type == MUSTACHE_TAGTYPE_NONE)
-            break;
-
         switch(tag->type) {
         /* Handle var tags. */
         case MUSTACHE_TAGTYPE_VAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR2:
-            APPEND_NUM(MUSTACHE_OP_GETNAMED);
+            APPEND_NUM(MUSTACHE_OP_RESOLVE);
             APPEND_NUM(tag->name_end - tag->name_beg);
             APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
             APPEND_NUM((tag->type == MUSTACHE_TAGTYPE_VAR) ?
@@ -459,32 +479,58 @@ mustache_compile(const char* templ_data, size_t templ_size,
             break;
 
         /* Handle section tags. */
-        // TODO: MUSTACHE_TAGTYPE_OPENSECTION
+        case MUSTACHE_TAGTYPE_OPENSECTION:
+            APPEND_NUM(MUSTACHE_OP_RESOLVEORJMP);
+            PUSH_JMP_POS();
+            APPEND_NUM(tag->name_end - tag->name_beg);
+            APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
+            APPEND_NUM(MUSTACHE_OP_ENTER);
+            break;
+        case MUSTACHE_TAGTYPE_CLOSESECTION:
+        {
+            off_t jmp_pos;
+
+            APPEND_NUM(MUSTACHE_OP_LEAVE);
+
+            /* Set jmp in MUSTACHE_OP_ENTER. */
+            jmp_pos = POP_JMP_POS();
+            INSERT_NUM(jmp_pos, insns.n - jmp_pos);
+            break;
+        }
+
         // TODO: MUSTACHE_TAGTYPE_OPENSECTIONINV
-        // TODO: MUSTACHE_TAGTYPE_CLOSESECTION
 
         /* Handle partials. */
         // TODO: MUSTACHE_TAGTYPE_PARTIAL
+
+        /* Handle the end-of-template. */
+        case MUSTACHE_TAGTYPE_NONE:
+            APPEND_NUM(MUSTACHE_OP_EXIT);
+            done = 1;
+            break;
 
         default:
             break;
         }
 
+        if(done)
+            break;
+
         off = tag->end;
         tag++;
     }
 
-    APPEND_NUM(MUSTACHE_OP_EXIT);
+    success = 1;
 
-    /* Success. */
-    free(tags);
-    return (MUSTACHE_TEMPLATE*) insns.data;
-
-    /* Error path. */
 err:
-    mustache_buffer_free(&insns);
     free(tags);
-    return NULL;
+    mustache_buffer_free(&jmp_pos_stack);
+    if(success) {
+        return (MUSTACHE_TEMPLATE*) insns.data;
+    } else {
+        mustache_buffer_free(&insns);
+        return NULL;
+    }
 }
 
 void
@@ -508,34 +554,61 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 {
     const uint8_t* insns = (const uint8_t*) t;
     off_t off = 0;
+    off_t reg_failaddr;
     void* reg_node = NULL;
-    void* current_node = NULL;
+    int done = 0;
+    MUSTACHE_BUFFER node_stack = { 0 };
 
-    current_node = provider->get_root(provider_data);
+#define PUSH_NODE()                                                                         \
+        do {                                                                                \
+            if(mustache_buffer_append(&node_stack, (void**) &reg_node, sizeof(void*)) != 0) \
+                goto err;                                                                   \
+        } while(0)
 
-    while(1) {
+#define POP_NODE()                                                                          \
+        do {                                                                                \
+            node_stack.n -= sizeof(void*);                                                  \
+        } while(0)
+
+
+    reg_node = provider->get_root(provider_data);
+    PUSH_NODE();
+
+    while(!done) {
         unsigned opcode = (unsigned) mustache_decode_num(insns, off, &off);
-
-        if(opcode == MUSTACHE_OP_EXIT)
-            break;
 
         switch(opcode) {
         case MUSTACHE_OP_LITERAL:
-            {
-                size_t n = (size_t) mustache_decode_num(insns, off, &off);
-                if(renderer->out_verbatim((const char*)(insns + off), n, renderer_data) != 0)
-                    return -1;
-                off += n;
-                break;
-            }
+        {
+            size_t n = (size_t) mustache_decode_num(insns, off, &off);
+            if(renderer->out_verbatim((const char*)(insns + off), n, renderer_data) != 0)
+                return -1;
+            off += n;
+            break;
+        }
 
-        case MUSTACHE_OP_GETNAMED:
-            {
-                size_t n = (size_t) mustache_decode_num(insns, off, &off);
-                reg_node = provider->get_named(current_node, (const char*)(insns + off), n, provider_data);
-                off += n;
-                break;
+        case MUSTACHE_OP_RESOLVEORJMP:
+        {
+            size_t jmp_len = mustache_decode_num(insns, off, &off);
+            reg_failaddr = off + jmp_len;
+            /* Pass through */
+        }
+
+        case MUSTACHE_OP_RESOLVE:
+        {
+            void** nodes = (void**) node_stack.data;
+            size_t n = node_stack.n / sizeof(void*);
+            size_t name_len = (size_t) mustache_decode_num(insns, off, &off);
+            const char* name = (const char*)(insns + off);
+            off += name_len;
+
+            while(n-- > 0) {
+                reg_node = provider->get_named(nodes[n], name, name_len, provider_data);
+                if(reg_node != NULL)
+                    break;
             }
+            break;
+        }
 
         case MUSTACHE_OP_OUTVERBATIM:
         case MUSTACHE_OP_OUTESCAPED:
@@ -548,8 +621,26 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                     return -1;
             }
             break;
+
+        case MUSTACHE_OP_ENTER:
+            if(reg_node != NULL)
+                PUSH_NODE();
+            else
+                off = reg_failaddr;
+            break;
+
+        case MUSTACHE_OP_LEAVE:
+            POP_NODE();
+            break;
+
+        case MUSTACHE_OP_EXIT:
+            done = 1;
+            break;
         }
     }
 
     return 0;
+
+err:
+    return -1;
 }

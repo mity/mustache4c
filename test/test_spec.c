@@ -18,13 +18,6 @@ typedef struct BUFFER {
  ****************************************************/
 
 static void
-sys_error(int err_code, void* data)
-{
-    BUFFER* buf = (BUFFER*) data;
-    buf->n += sprintf(buf->data, "Error: %s\n", strerror(err_code));
-}
-
-static void
 parse_error(int err_code, const char* msg, unsigned line, unsigned col, void* data)
 {
     BUFFER* buf = (BUFFER*) data;
@@ -32,7 +25,6 @@ parse_error(int err_code, const char* msg, unsigned line, unsigned col, void* da
 }
 
 static const MUSTACHE_PARSER parser = {
-    sys_error,
     parse_error
 };
 
@@ -78,9 +70,13 @@ get_named(void* node, const char* name, size_t size, void* data)
         return NULL;
 
     for(i = 0; i < value->data.obj.n; i++) {
-        const char* key = value->data.obj.keys[i];
-        if(strlen(key) == size && strncmp(key, name, size) == 0)
-            return (void*) value->data.obj.values[i];
+        const char* child_key = value->data.obj.keys[i];
+        if(strlen(child_key) == size && strncmp(child_key, name, size) == 0) {
+            JSON_VALUE* child_value = value->data.obj.values[i];
+            if(child_value->type == JSON_NULL || child_value->type == JSON_FALSE)
+                return NULL;
+            return (void*) child_value;
+        }
     }
 
     return NULL;
