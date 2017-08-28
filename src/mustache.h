@@ -109,7 +109,7 @@ typedef struct MUSTACHE_DATAPROVIDER {
      * Called to output contents of the given node. One of the MUSTACHE_PARSER
      * output functions is provided, depending on the type of the mustache tag
      * ( {{...}} versus {{{...}}} ). Implementation of dump() may call that
-     * function arbitrarilly.
+     * function arbitrarily.
      *
      * In many applications, it is not desirable/expected to be able dumping
      * specific nodes (e.g. if the node is list or array forming the data
