@@ -152,7 +152,7 @@ MUSTACHE_TEMPLATE* mustache_compile(const char* templ_data, size_t templ_size,
                                     unsigned flags);
 
 /**
- * Release the templated compiled with @c mustache_compile().
+ * Release the template compiled with @c mustache_compile().
  *
  * @param t The template.
  */
