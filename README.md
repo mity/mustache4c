@@ -7,14 +7,86 @@
 * Home: https://github.com/mity/mustache4c
 
 
-## WARNING
+## What is {{mustache}}
 
-This is still work in very embryonal stage. No feature is fully functional
-or even recognizable.
+[{{mustache}}] is logic-less templating system. The term "logic-less" means
+it lacks any explicit `if` or `else` conditionals or `for` loops, however both
+looping and conditional evaluation can be achieved using section tags
+processing lists.
 
-One day, it shall hopefully grow and mature into fully developed and effective
-C {{mustache}} parser, intended mainly for integration into other code rather
-then as a toolset of command line utilities.
+It is named {{mustache}} because of heav use of curly braces (`{` and `}`)
+which resemble a sideways mustache.
+
+[{{mustache(5)}}][man5] can provide you an idea about {{mustache}} capabilities
+and its syntax. More advanced use and understading can be reached if you
+immerse in [{{mustache}} official specification][spec].
+
+
+## What is Mustache4C
+
+Mustache4C is C implementation of {{mustache}} parser and processor,
+intended mainly for embedding in other C/C++ code.
+
+Note it does not enforce any explicit data structures for data. Many other
+implementations assume some particular data storage (typically JSON) which is
+ready and provided before the template processing begins.
+
+Instead of that, Mustache4C asks the application for any data referred
+from the template via some callback functions, and Mustache4C does not
+assume anything but tree hierarchy of those data and that each node in the
+tree may be represented with a single opaque pointer (`void*`).
+
+This even allows the application to generate the data on the fly, or retrieve
+it from a database instead of getting and preparing whole data set beforehand
+in the computer memory.
+
+A documentation of its API is currently only available directly in the [header
+file `mustache.h`][mustache.h].
+
+
+## Current Status
+
+### Specification Conformance
+
+Mustache4C is still in the development process but it is already becoming
+usefull. The current state of main features (using the terminology of the
+[{{mustache}} specification 1.1.3][spec]) is as follows.
+
+ * [x] **Variables** (`{{foo}}`, `{{{bar}}}`):
+       Implemented. All [spec tests][spec-interpolation] are passing.
+
+ * [x] **(Regular) Sections**  (`{{#foo}} ... {{/foo}}`):
+       Implemented. All [spec tests][spec-sections] are passing.
+
+ * [x] **Inverted Sections** (`{{^foo}} ... {{/foo}}`):
+       Implemented. All [spec tests][spec-inverted] are passing.
+
+ * [x] **Comments** (`{{! foo bar }}`):
+       Implemented. All [spec tests][spec-comments] are passing.
+
+ * [ ] **Partials** (`{{>foo}}`):
+       Not yet implemented, but planned.
+
+ * [x] **Set Delimiter** (`{{=<% %>=}}`):
+       Implemented. Two [spec tests][spec-delimiters] are still failing, but
+       those require Partials to be implemented.
+
+
+### Note about Lambdas
+
+The design of Mustache4C in general supports generating or retriving some data
+in run-time, which more or less allows application to support lambda. But such
+implementation is and will be on the application using Mustache4C, and the
+implementation likely shall be limited to things needed by the application.
+
+Full lambda support as seen in many modern scripting languages is not and
+will not be supported by Mustache4C.
+
+
+### Extensions
+
+When seen as useful, some extensions may be implemented after the conformance
+with the specification is reached.
 
 
 ## License
@@ -28,3 +100,18 @@ If you encounter any bug, please be so kind and report it. Unheard bugs cannot
 get fixed. You can submit bug reports here:
 
 * https://github.com/mity/mustache4c/issues
+
+
+
+
+[{{mustache}}]: https://mustache.github.io/
+[man5]: https://mustache.github.io/mustache.5.html
+[spec]: https://github.com/mustache/spec
+[spec-comments]: https://github.com/mustache/spec/blob/master/specs/comments.yml
+[spec-delimiters]: https://github.com/mustache/spec/blob/master/specs/delimiters.yml
+[spec-interpolation]: https://github.com/mustache/spec/blob/master/specs/interpolationv.yml
+[spec-inverted]: https://github.com/mustache/spec/blob/master/specs/inverted.yml
+[spec-partials]: https://github.com/mustache/spec/blob/master/specs/partials.yml
+[spec-sections]: https://github.com/mustache/spec/blob/master/specs/sections.yml
+[spec-lambdas]: https://github.com/mustache/spec/blob/master/specs/~lambdas.yml
+[mustache.h]: https://github.com/mity/mustache4c/blob/master/src/mustache.h
