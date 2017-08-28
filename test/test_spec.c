@@ -375,7 +375,7 @@ test_delimiters_5(void)
         "delimiters set in a parent template should not affect a partial",
         "[ {{>include}} ]\n{{= | | =}}\n[ |>include| ]\n",
         "{\"value\": \"yes\"}",
-        "{\"value\": \"yes\"}",
+        "{\"include\": \".{{value}}.\"}",
         "[ .yes. ]\n[ .yes. ]\n"
     );
 }
@@ -387,7 +387,7 @@ test_delimiters_6(void)
         "delimiters set in a partial should not affect the parent template",
         "[ {{>include}} ]\n[ .{{value}}.  .|value|. ]\n",
         "{\"value\": \"yes\"}",
-        "{\"value\": \"yes\"}",
+        "{\"include\": \".{{value}}. {{= | | =}} .|value|.\"}",
         "[ .yes.  .yes. ]\n[ .yes.  .|value|. ]\n"
     );
 }
@@ -1107,7 +1107,7 @@ test_partials_1(void)
         "the greater-than operator should expand to the named partial",
         "\"{{>text}}\"",
         "{}",
-        "{}",
+        "{\"text\": \"from partial\"}",
         "\"from partial\""
     );
 }
@@ -1131,7 +1131,7 @@ test_partials_3(void)
         "the greater-than operator should operate within the current context",
         "\"{{>partial}}\"",
         "{\"text\": \"content\"}",
-        "{\"text\": \"content\"}",
+        "{\"partial\": \"*{{text}}*\"}",
         "\"*content*\""
     );
 }
@@ -1143,7 +1143,7 @@ test_partials_4(void)
         "the greater-than operator should properly recurse",
         "{{>node}}",
         "{\"content\": \"X\", \"nodes\": [{\"content\": \"Y\", \"nodes\": []}]}",
-        "{\"content\": \"X\", \"nodes\": [{\"content\": \"Y\", \"nodes\": []}]}",
+        "{\"node\": \"{{content}}<{{#nodes}}{{>node}}{{/nodes}}>\"}",
         "X<Y<>>"
     );
 }
@@ -1155,7 +1155,7 @@ test_partials_5(void)
         "the greater-than operator should not alter surrounding whitespace",
         "| {{>partial}} |",
         "{}",
-        "{}",
+        "{\"partial\": \"\\t|\\t\"}",
         "|  |    |"
     );
 }
@@ -1167,7 +1167,7 @@ test_partials_6(void)
         "whitespace should be left untouched",
         "  {{data}}  {{> partial}}\n",
         "{\"data\": \"|\"}",
-        "{\"data\": \"|\"}",
+        "{\"partial\": \">\\n>\"}",
         "  |  >\n>\n"
     );
 }
@@ -1179,7 +1179,7 @@ test_partials_7(void)
         "\"\\r\\n\" should be considered a newline for standalone tags",
         "|\r\n{{>partial}}\r\n|",
         "{}",
-        "{}",
+        "{\"partial\": \">\"}",
         "|\r\n>|"
     );
 }
@@ -1191,7 +1191,7 @@ test_partials_8(void)
         "standalone tags should not require a newline to precede them",
         "  {{>partial}}\n>",
         "{}",
-        "{}",
+        "{\"partial\": \">\\n>\"}",
         "  >\n  >>"
     );
 }
@@ -1203,7 +1203,7 @@ test_partials_9(void)
         "standalone tags should not require a newline to follow them",
         ">\n  {{>partial}}",
         "{}",
-        "{}",
+        "{\"partial\": \">\\n>\"}",
         ">\n  >\n  >"
     );
 }
@@ -1215,7 +1215,7 @@ test_partials_10(void)
         "each line of the partial should be indented before rendering",
         "\\\n {{>partial}}\n/\n",
         "{\"content\": \"<\\n->\"}",
-        "{\"content\": \"<\\n->\"}",
+        "{\"partial\": \"|\\n{{{content}}}\\n|\\n\"}",
         "\\\n |\n <\n->\n |\n/\n"
     );
 }
@@ -1227,7 +1227,7 @@ test_partials_11(void)
         "superfluous in-tag whitespace should be ignored",
         "|{{> partial }}|",
         "{\"boolean\": true}",
-        "{\"boolean\": true}",
+        "{\"partial\": \"[]\"}",
         "|[]|"
     );
 }
@@ -1274,7 +1274,7 @@ test_sections_4(void)
     run(
         "all elements on the context stack should be accessible",
         "{{#a}}\n{{one}}\n{{#b}}\n{{one}}{{two}}{{one}}\n{{#c}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{#d}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{#e}}\n{{one}}{{two}}{{three}}{{four}}{{five}}{{four}}{{three}}{{two}}{{one}}\n{{/e}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{/d}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{/c}}\n{{one}}{{two}}{{one}}\n{{/b}}\n{{one}}\n{{/a}}\n",
-        "{\"a\": {\"one\": 1}, \"b\": {\"two\": 2}, \"e\": {\"five\": 5}, \"d\": {\"four\": 4}, \"c\": {\"three\": 3}}",
+        "{\"a\": {\"one\": 1}, \"e\": {\"five\": 5}, \"d\": {\"four\": 4}, \"b\": {\"two\": 2}, \"c\": {\"three\": 3}}",
         NULL,
         "1\n121\n12321\n1234321\n123454321\n1234321\n12321\n121\n1\n"
     );

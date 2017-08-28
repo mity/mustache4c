@@ -38,7 +38,7 @@ def process_file(path):
                 data = None
 
             if test.get("partials") is not None:
-                partials = json.dumps(test["data"])
+                partials = json.dumps(test["partials"])
             else:
                 partials = None;
 
