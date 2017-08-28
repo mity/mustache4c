@@ -191,8 +191,9 @@ static const char* mustache_err_messages[] = {
     "Tag has no name.",
     "Section-opening tag has no closer.",
     "Section-closing tag has no opener.",
-    "Name of section-closing tag does not match corresponding section-opening tag."
-    "The section-opening is located here."
+    "Name of section-closing tag does not match corresponding section-opening tag.",
+    "The section-opening is located here.",
+    "Invalid specification of delimiters."
 };
 
 /* For the given template, we construct list of MUSTACHE_TAGINFO structures.
@@ -202,6 +203,7 @@ static const char* mustache_err_messages[] = {
 
 typedef enum MUSTACHE_TAGTYPE {
     MUSTACHE_TAGTYPE_NONE = 0,
+    MUSTACHE_TAGTYPE_DELIM,             /* {{=@ @=}} */
     MUSTACHE_TAGTYPE_COMMENT,           /* {{! comment }} */
     MUSTACHE_TAGTYPE_VAR,               /* {{ var }} */
     MUSTACHE_TAGTYPE_VERBATIMVAR,       /* {{{ var }}} */
@@ -321,6 +323,54 @@ err:
 }
 
 static int
+mustache_parse_delimiters(const char* delim_spec, size_t size,
+                          char* opener, size_t* p_opener_len,
+                          char* closer, size_t* p_closer_len)
+{
+    off_t opener_beg, opener_end;
+    off_t closer_beg, closer_end;
+
+    opener_beg = 0;
+
+    opener_end = opener_beg;
+    while(opener_end < size) {
+        if(MUSTACHE_ISWHITESPACE(delim_spec[opener_end]))
+            break;
+        if(delim_spec[opener_end] == '=')
+            return -1;
+        opener_end++;
+    }
+    if(opener_end <= opener_beg  ||  opener_end - opener_beg > MUSTACHE_MAXOPENERLENGTH)
+        return -1;
+
+    closer_beg = opener_end;
+    while(closer_beg < size) {
+        if(!MUSTACHE_ISWHITESPACE(delim_spec[closer_beg]))
+            break;
+        closer_beg++;
+    }
+    if(closer_beg <= opener_end)
+        return -1;
+
+    closer_end = closer_beg;
+    while(closer_end < size) {
+        if(MUSTACHE_ISWHITESPACE(delim_spec[closer_end]))
+            return -1;
+        closer_end++;
+    }
+    if(closer_end <= closer_beg  ||   closer_end - closer_beg > MUSTACHE_MAXCLOSERLENGTH)
+        return -1;
+    if(closer_end != size)
+        return -1;
+
+    memcpy(opener, delim_spec + opener_beg, opener_end - opener_beg);
+    *p_opener_len = opener_end - opener_beg;
+    memcpy(closer, delim_spec + closer_beg, closer_end - closer_beg);
+    *p_closer_len = closer_end - closer_beg;
+    return 0;
+}
+
+static int
 mustache_parse(const char* templ_data, size_t templ_size,
                const MUSTACHE_PARSER* parser, void* parser_data,
                MUSTACHE_TAGINFO** p_tags, unsigned* p_n_tags)
@@ -344,8 +394,8 @@ mustache_parse(const char* templ_data, size_t templ_size,
     while(off < templ_size) {
         int is_opener, is_closer;
 
-        is_opener = (off + opener_len <= templ_size  &&  strncmp(templ_data+off, opener, opener_len) == 0);
-        is_closer = (off + closer_len <= templ_size  &&  strncmp(templ_data+off, closer, closer_len) == 0);
+        is_opener = (off + opener_len <= templ_size  &&  memcmp(templ_data+off, opener, opener_len) == 0);
+        is_closer = (off + closer_len <= templ_size  &&  memcmp(templ_data+off, closer, closer_len) == 0);
         if(is_opener && is_closer) {
             /* Opener and closer may be defined to be the same string.
              * Consider for example "{{=@ @=}}".
@@ -377,20 +427,15 @@ mustache_parse(const char* templ_data, size_t templ_size,
 
             if(off < templ_size) {
                 switch(templ_data[off]) {
-                    case '!':   current_tag.type = MUSTACHE_TAGTYPE_COMMENT; off++; break;
-                    case '{':   current_tag.type = MUSTACHE_TAGTYPE_VERBATIMVAR; off++; break;
-                    case '&':   current_tag.type = MUSTACHE_TAGTYPE_VERBATIMVAR2; off++; break;
-                    case '#':   current_tag.type = MUSTACHE_TAGTYPE_OPENSECTION; off++; break;
-                    case '^':   current_tag.type = MUSTACHE_TAGTYPE_OPENSECTIONINV; off++; break;
-                    case '/':   current_tag.type = MUSTACHE_TAGTYPE_CLOSESECTION; off++; break;
-                    case '>':   current_tag.type = MUSTACHE_TAGTYPE_PARTIAL; off++; break;
-
-                    // TODO: handle delimiter reset specially
-                    // (Consider strange things like "{{={{ }}=}}" which may
-                    // have the same old and new opener and/or closer.)
-                    //case '=':   current_tag.type = MUSTACHE_TAGTYPE_DELIM; off++; break;
-
-                    default:    current_tag.type = MUSTACHE_TAGTYPE_VAR; break;
+                case '=':   current_tag.type = MUSTACHE_TAGTYPE_DELIM; off++; break;
+                case '!':   current_tag.type = MUSTACHE_TAGTYPE_COMMENT; off++; break;
+                case '{':   current_tag.type = MUSTACHE_TAGTYPE_VERBATIMVAR; off++; break;
+                case '&':   current_tag.type = MUSTACHE_TAGTYPE_VERBATIMVAR2; off++; break;
+                case '#':   current_tag.type = MUSTACHE_TAGTYPE_OPENSECTION; off++; break;
+                case '^':   current_tag.type = MUSTACHE_TAGTYPE_OPENSECTIONINV; off++; break;
+                case '/':   current_tag.type = MUSTACHE_TAGTYPE_CLOSESECTION; off++; break;
+                case '>':   current_tag.type = MUSTACHE_TAGTYPE_PARTIAL; off++; break;
+                default:    current_tag.type = MUSTACHE_TAGTYPE_VAR; break;
                 }
             }
 
@@ -430,11 +475,33 @@ mustache_parse(const char* templ_data, size_t templ_size,
                             (unsigned) line, (unsigned) col, parser_data);
                     n_errors++;
                 }
+            } else if(current_tag.type == MUSTACHE_TAGTYPE_DELIM) {
+                /* Maybe we are not really the closer. Maybe the directive
+                 * does not change the closer so we are the "new closer" in
+                 * something like "{{=<something> }}=}}". */
+                if(templ_data[current_tag.name_end - 1] != '='  &&
+                   off + closer_len < templ_size  &&
+                   templ_data[off] == '='  &&
+                   memcmp(templ_data + off + 1, closer, closer_len) == 0)
+                {
+                    current_tag.name_end += closer_len + 1;
+                    off += closer_len + 1;
+                    col += closer_len + 1;
+                }
+
+                if(templ_data[current_tag.name_end - 1] != '=') {
+                    parser->parse_error(MUSTACHE_ERR_INCOMPATIBLETAGCLOSER,
+                            mustache_err_messages[MUSTACHE_ERR_INCOMPATIBLETAGCLOSER],
+                            (unsigned) line, (unsigned) col, parser_data);
+                    n_errors++;
+                } else if(current_tag.name_end > current_tag.name_beg) {
+                    current_tag.name_end--;     /* Consume the closer's '=' */
+                }
             }
 
             current_tag.end = off;
 
-            /* If the tag is standalone, expand it to consumme also any
+            /* If the tag is standalone, expand it to consume also any
              * preceding whitespace and also one new-line (before or after). */
             if(current_tag.type != MUSTACHE_TAGTYPE_VAR &&
                current_tag.type != MUSTACHE_TAGTYPE_VERBATIMVAR &&
@@ -466,6 +533,22 @@ mustache_parse(const char* templ_data, size_t templ_size,
                             parser_data);
                     n_errors++;
                 }
+            }
+
+            if(current_tag.type == MUSTACHE_TAGTYPE_DELIM) {
+                if(mustache_parse_delimiters(templ_data + current_tag.name_beg,
+                        current_tag.name_end - current_tag.name_beg,
+                        opener, &opener_len, closer, &closer_len) != 0)
+                {
+                    parser->parse_error(MUSTACHE_ERR_INVALIDDELIMITERS,
+                            mustache_err_messages[MUSTACHE_ERR_INVALIDDELIMITERS],
+                            (unsigned)current_tag.line, (unsigned)current_tag.col,
+                            parser_data);
+                    n_errors++;
+                }
+
+                /* From now on, ignore this tag. */
+                current_tag.type = MUSTACHE_TAGTYPE_COMMENT;
             }
 
             /* Remember the tag info. */
