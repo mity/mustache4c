@@ -188,6 +188,7 @@ static const char* mustache_err_messages[] = {
     "Tag closer has no opener.",
     "Tag closer is incompatible with its opener.",
     "Tag has no name.",
+    "Tag name is invalid.",
     "Section-opening tag has no closer.",
     "Section-closing tag has no opener.",
     "Name of section-closing tag does not match corresponding section-opening tag.",
@@ -242,6 +243,28 @@ mustache_is_std_closer(const char* closer, size_t closer_len)
     }
 
     return 1;
+}
+
+static int
+mustache_validate_tagname(const char* tagname, size_t size)
+{
+    off_t off;
+
+    if(size == 1  &&  tagname[0] == '.')
+        return 0;
+
+    /* Verify there is no whitespace and that '.' is used only as a delimtiter
+     * of non-empty tokens. */
+    if(tagname[0] == '.'  ||  tagname[size-1] == '.')
+        return -1;
+    for(off = 0; off < size; off++) {
+        if(MUSTACHE_ISWHITESPACE(tagname[off]))
+            return -1;
+        if(tagname[off] == '.'  &&  off+1 < size  &&  tagname[off+1] == '.')
+            return -1;
+    }
+
+    return 0;
 }
 
 static int
@@ -548,6 +571,17 @@ mustache_parse(const char* templ_data, size_t templ_size,
 
                 /* From now on, ignore this tag. */
                 current_tag.type = MUSTACHE_TAGTYPE_COMMENT;
+            }
+
+            if(current_tag.type != MUSTACHE_TAGTYPE_COMMENT) {
+                if(mustache_validate_tagname(templ_data + current_tag.name_beg,
+                            current_tag.name_end - current_tag.name_beg) != 0) {
+                    parser->parse_error(MUSTACHE_ERR_INVALIDTAGNAME,
+                            mustache_err_messages[MUSTACHE_ERR_INVALIDTAGNAME],
+                            (unsigned)current_tag.line, (unsigned)current_tag.col,
+                            parser_data);
+                    n_errors++;
+                }
             }
 
             /* Remember the tag info. */
