@@ -629,18 +629,23 @@ err:
 /* Instruction to resolve a tag name.
  *
  *   Arg #1: (Relative) setjmp value (NUM).
- *   Arg #2: Length of the tag name (NUM).
- *   Arg #3: The tag name (STR).
+ *   Arg #2: Count of names (NUM).
+ *   Arg #3: Length of the 1st tag name (NUM).
+ *   Arg #4: The tag name (STR).
+ *   etc. (more names follow, up to the count in arg #2)
  *
  *   Registers: reg_node is set to the resolved node, or NULL.
- *              reg_failaddr is set to address where to jump.
+ *              reg_failaddr is set to address where some next instruction may
+ *              want to jump on some condition.
  */
 #define MUSTACHE_OP_RESOLVE_setjmp  2
 
 /* Instruction to resolve a tag name.
  *
- *   Arg #1: Length of the tag name (NUM).
- *   Arg #2: The tag name (STR).
+ *   Arg #1: Count of names (NUM).
+ *   Arg #2: Length of the tag name (NUM).
+ *   Arg #3: The tag name (STR).
+ *   etc. (more names follow, up to the count in arg #1)
  *
  *   Registers: reg_node is set to the resolved node, or NULL.
  */
@@ -674,6 +679,38 @@ err:
  */
 #define MUSTACHE_OP_LEAVE           8
 
+
+static int
+mustache_compile_tagname(MUSTACHE_BUFFER* insns, const char* name, size_t size)
+{
+    unsigned n_tokens = 1;
+    unsigned i;
+    off_t tok_beg, tok_end;
+
+    for(i = 0; i < size; i++) {
+        if(name[i] == '.')
+            n_tokens++;
+    }
+
+    if(mustache_buffer_append_num(insns, n_tokens) != 0)
+        return -1;
+
+    tok_beg = 0;
+    for(i = 0; i < n_tokens; i++) {
+        tok_end = tok_beg;
+        while(tok_end < size  &&  name[tok_end] != '.')
+            tok_end++;
+
+        if(mustache_buffer_append_num(insns, tok_end - tok_beg) != 0)
+            return -1;
+        if(mustache_buffer_append(insns, name + tok_beg, tok_end - tok_beg) != 0)
+            return -1;
+
+        tok_beg = tok_end + 1;
+    }
+
+    return 0;
+}
 
 MUSTACHE_TEMPLATE*
 mustache_compile(const char* templ_data, size_t templ_size,
@@ -713,6 +750,13 @@ mustache_compile(const char* templ_data, size_t templ_size,
                 goto err;                                                               \
         } while(0)
 
+#define APPEND_TAGNAME(tag)                                                             \
+        do {                                                                            \
+            if(mustache_compile_tagname(&insns, templ_data + (tag)->name_beg,           \
+                                        (tag)->name_end - (tag)->name_beg) != 0)        \
+                goto err;                                                               \
+        } while(0)
+
 #define INSERT_NUM(pos, num)                                                            \
         do {                                                                            \
             if(mustache_buffer_insert_num(&insns, (pos), (uint64_t)(num)) != 0)         \
@@ -744,8 +788,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
         case MUSTACHE_TAGTYPE_VERBATIMVAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR2:
             APPEND_NUM(MUSTACHE_OP_RESOLVE);
-            APPEND_NUM(tag->name_end - tag->name_beg);
-            APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
+            APPEND_TAGNAME(tag);
             APPEND_NUM((tag->type == MUSTACHE_TAGTYPE_VAR) ?
                         MUSTACHE_OP_OUTESCAPED : MUSTACHE_OP_OUTVERBATIM);
             break;
@@ -754,8 +797,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
         case MUSTACHE_TAGTYPE_OPENSECTIONINV:
             APPEND_NUM(MUSTACHE_OP_RESOLVE_setjmp);
             PUSH_JMP_POS();
-            APPEND_NUM(tag->name_end - tag->name_beg);
-            APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
+            APPEND_TAGNAME(tag);
             APPEND_NUM((tag->type == MUSTACHE_TAGTYPE_OPENSECTION) ?
                         MUSTACHE_OP_ENTER : MUSTACHE_OP_ONRESOLVEFAIL);
             break;
@@ -858,16 +900,26 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 
         case MUSTACHE_OP_RESOLVE:
         {
-            void** nodes = (void**) node_stack.data;
-            size_t n = node_stack.n / sizeof(void*);
-            size_t name_len = (size_t) mustache_decode_num(insns, off, &off);
-            const char* name = (const char*)(insns + off);
-            off += name_len;
+            unsigned n_names = (unsigned) mustache_decode_num(insns, off, &off);
+            unsigned i;
 
-            while(n-- > 0) {
-                reg_node = provider->get_named(nodes[n], name, name_len, provider_data);
-                if(reg_node != NULL)
-                    break;
+            for(i = 0; i < n_names; i++) {
+                size_t name_len = (size_t) mustache_decode_num(insns, off, &off);
+                const char* name = (const char*)(insns + off);
+                off += name_len;
+
+                if(i == 0) {
+                    void** nodes = (void**) node_stack.data;
+                    size_t n_nodes = node_stack.n / sizeof(void*);
+
+                    while(n_nodes-- > 0) {
+                        reg_node = provider->get_named(nodes[n_nodes], name, name_len, provider_data);
+                        if(reg_node != NULL)
+                            break;
+                    }
+                } else if(reg_node != NULL) {
+                    reg_node = provider->get_named(reg_node, name, name_len, provider_data);
+                }
             }
             break;
         }
