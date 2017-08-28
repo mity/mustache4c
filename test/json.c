@@ -72,7 +72,7 @@ json_create_unqoted_string(const char* input, off_t off, char** p_str)
 {
     JSON_BUFFER buf = { 0 };
 
-    while(strchr(" \t\r\n]}", input[off]) == NULL) {
+    while(strchr(" \t\r\n,]}", input[off]) == NULL) {
         json_append(&buf, input[off]);
         off++;
     }
