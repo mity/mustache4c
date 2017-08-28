@@ -635,7 +635,7 @@ err:
  *   etc. (more names follow, up to the count in arg #2)
  *
  *   Registers: reg_node is set to the resolved node, or NULL.
- *              reg_failaddr is set to address where some next instruction may
+ *              reg_jmpaddr is set to address where some next instruction may
  *              want to jump on some condition.
  */
 #define MUSTACHE_OP_RESOLVE_setjmp  2
@@ -654,7 +654,7 @@ err:
 /* Instruction to jump if previous resolving instruction succeeded.
  *
  * Registers: If reg_node is NULL, continues normally.
- *            Otherwise, program counter is changed to address in reg_failaddr.
+ *            Otherwise, program counter is changed to address in reg_jmpaddr.
  */
 #define MUSTACHE_OP_ONRESOLVEFAIL   4
 
@@ -670,7 +670,7 @@ err:
  * context for resolve instructions.
  *
  * Registers: If it is not NULL, reg_node is pushed to the stack.
- *            Otherwise, program counter is changed to address in reg_failaddr.
+ *            Otherwise, program counter is changed to address in reg_jmpaddr.
  */
 #define MUSTACHE_OP_ENTER           7
 
@@ -861,9 +861,9 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                  const MUSTACHE_DATAPROVIDER* provider, void* provider_data)
 {
     const uint8_t* insns = (const uint8_t*) t;
-    off_t off = 0;
-    off_t reg_failaddr;
-    void* reg_node = NULL;
+    off_t reg_pc = 0;       /* Program counter register. */
+    off_t reg_jmpaddr;      /* Jump target address register. */
+    void* reg_node = NULL;  /* Working node register. */
     int done = 0;
     MUSTACHE_STACK node_stack = { 0 };
 
@@ -879,34 +879,34 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     PUSH_NODE();
 
     while(!done) {
-        unsigned opcode = (unsigned) mustache_decode_num(insns, off, &off);
+        unsigned opcode = (unsigned) mustache_decode_num(insns, reg_pc, &reg_pc);
 
         switch(opcode) {
         case MUSTACHE_OP_LITERAL:
         {
-            size_t n = (size_t) mustache_decode_num(insns, off, &off);
-            if(renderer->out_verbatim((const char*)(insns + off), n, renderer_data) != 0)
+            size_t n = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
+            if(renderer->out_verbatim((const char*)(insns + reg_pc), n, renderer_data) != 0)
                 return -1;
-            off += n;
+            reg_pc += n;
             break;
         }
 
         case MUSTACHE_OP_RESOLVE_setjmp:
         {
-            size_t jmp_len = (size_t) mustache_decode_num(insns, off, &off);
-            reg_failaddr = off + jmp_len;
+            size_t jmp_len = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
+            reg_jmpaddr = reg_pc + jmp_len;
             /* Pass through */
         }
 
         case MUSTACHE_OP_RESOLVE:
         {
-            unsigned n_names = (unsigned) mustache_decode_num(insns, off, &off);
+            unsigned n_names = (unsigned) mustache_decode_num(insns, reg_pc, &reg_pc);
             unsigned i;
 
             for(i = 0; i < n_names; i++) {
-                size_t name_len = (size_t) mustache_decode_num(insns, off, &off);
-                const char* name = (const char*)(insns + off);
-                off += name_len;
+                size_t name_len = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
+                const char* name = (const char*)(insns + reg_pc);
+                reg_pc += name_len;
 
                 if(i == 0) {
                     void** nodes = (void**) node_stack.data;
@@ -928,7 +928,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             if(reg_node == NULL) {
                 /* Resolve succeeded: Noop. */
             } else {
-                off = reg_failaddr;
+                reg_pc = reg_jmpaddr;
             }
             break;
 
@@ -948,7 +948,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             if(reg_node != NULL)
                 PUSH_NODE();
             else
-                off = reg_failaddr;
+                reg_pc = reg_jmpaddr;
             break;
 
         case MUSTACHE_OP_LEAVE:
