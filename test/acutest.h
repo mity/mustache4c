@@ -126,6 +126,12 @@
     #include <signal.h>
 #endif
 
+#if defined(__gnu_linux__)
+    #define ACUTEST_LINUX__     1
+    #include <fcntl.h>
+    #include <sys/stat.h>
+#endif
+
 #if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
     #define ACUTEST_WIN__       1
     #include <windows.h>
@@ -164,7 +170,7 @@ static int test_list_size__ = 0;
 static const struct test__** tests__ = NULL;
 static char* test_flags__ = NULL;
 static int test_count__ = 0;
-static int test_no_exec__ = 0;
+static int test_no_exec__ = -1;
 static int test_no_summary__ = 0;
 static int test_skip_mode__ = 0;
 
@@ -363,6 +369,31 @@ test_remember__(int i)
 }
 
 static int
+test_name_contains_word__(const char* name, const char* pattern)
+{
+    static const char word_delim[] = " \t-_.";
+    const char* substr;
+    size_t pattern_len;
+    int starts_on_word_boundary;
+    int ends_on_word_boundary;
+
+    pattern_len = strlen(pattern);
+
+    substr = strstr(name, pattern);
+    while(substr != NULL) {
+        starts_on_word_boundary = (substr == name || strchr(word_delim, substr[-1]) != NULL);
+        ends_on_word_boundary = (substr[pattern_len] == '\0' || strchr(word_delim, substr[pattern_len]) != NULL);
+
+        if(starts_on_word_boundary && ends_on_word_boundary)
+            return 1;
+
+        substr = strstr(substr+1, pattern);
+    }
+
+    return 0;
+}
+
+static int
 test_lookup__(const char* pattern)
 {
     int i;
@@ -372,9 +403,22 @@ test_lookup__(const char* pattern)
     for(i = 0; i < test_list_size__; i++) {
         if(strcmp(test_list__[i].name, pattern) == 0) {
             test_remember__(i);
-            return 1;
+            n++;
+            break;
         }
     }
+    if(n > 0)
+        return n;
+
+    /* Try word match. */
+    for(i = 0; i < test_list_size__; i++) {
+        if(test_name_contains_word__(test_list__[i].name, pattern)) {
+            test_remember__(i);
+            n++;
+        }
+    }
+    if(n > 0)
+        return n;
 
     /* Try relaxed match. */
     for(i = 0; i < test_list_size__; i++) {
@@ -600,7 +644,9 @@ test_help__(void)
     printf("\n");
     printf("Options:\n");
     printf("  -s, --skip            Execute all unit tests but the listed ones\n");
-    printf("      --no-exec         Do not execute unit tests as child processes\n");
+    printf("      --exec=WHEN       If supported, execute unit tests as child processes\n");
+    printf("                          (WHEN is one of 'auto', 'always', 'never')\n");
+    printf("  -E, --no-exec         Same as --exec=never\n");
     printf("      --no-summary      Suppress printing of test results summary\n");
     printf("  -l, --list            List unit tests in the suite and exit\n");
     printf("  -v, --verbose         Enable more verbose output\n");
@@ -609,7 +655,8 @@ test_help__(void)
     printf("                          1 ... Output one line per test (and summary)\n");
     printf("                          2 ... As 1 and failed conditions (this is default)\n");
     printf("                          3 ... As 1 and all conditions (and extended summary)\n");
-    printf("      --color=WHEN      Enable colorized output (WHEN is one of 'auto', 'always', 'never')\n");
+    printf("      --color=WHEN      Enable colorized output\n");
+    printf("                          (WHEN is one of 'auto', 'always', 'never')\n");
     printf("  -h, --help            Display this help and exit\n");
 
     if(test_list_size__ < 16) {
@@ -617,6 +664,45 @@ test_help__(void)
         test_list_names__();
     }
 }
+
+#ifdef ACUTEST_LINUX__
+static int
+test_is_tracer_present__(void)
+{
+    char buf[256+32+1];
+    int tracer_present = 0;
+    int fd;
+    ssize_t n_read;
+
+    fd = open("/proc/self/status", O_RDONLY);
+    if(fd == -1)
+        return 0;
+
+    n_read = read(fd, buf, sizeof(buf)-1);
+    while(n_read > 0) {
+        static const char pattern[] = "TracerPid:";
+        const char* field;
+
+        buf[n_read] = '\0';
+        field = strstr(buf, pattern);
+        if(field != NULL) {
+            pid_t tracer_pid = (pid_t) atoi(field + sizeof(pattern) - 1);
+            tracer_present = (tracer_pid != 0);
+            break;
+        }
+
+        if(n_read == sizeof(buf)-1) {
+            memmove(buf, buf + sizeof(buf)-1 - 32, 32);
+            n_read = read(fd, buf+32, sizeof(buf)-1-32);
+            if(n_read > 0)
+                n_read += 32;
+        }
+    }
+
+    close(fd);
+    return tracer_present;
+}
+#endif
 
 int
 main(int argc, char** argv)
@@ -668,11 +754,15 @@ main(int argc, char** argv)
             /* noop (set from above) */
         } else if(strcmp(argv[i], "--color=always") == 0 || strcmp(argv[i], "--color") == 0) {
             test_colorize__ = 1;
-        } else if(strcmp(argv[i], "--color=never") == 0) {
+        } else if(strcmp(argv[i], "--color=never") == 0 || strcmp(argv[i], "--no-color") == 0) {
             test_colorize__ = 0;
         } else if(strcmp(argv[i], "--skip") == 0 || strcmp(argv[i], "-s") == 0) {
             test_skip_mode__ = 1;
-        } else if(strcmp(argv[i], "--no-exec") == 0) {
+        } else if(strcmp(argv[i], "--exec=auto") == 0) {
+            /* noop (set from above) */
+        } else if(strcmp(argv[i], "--exec=always") == 0 || strcmp(argv[i], "--exec") == 0) {
+            test_no_exec__ = 0;
+        } else if(strcmp(argv[i], "--exec=never") == 0 || strcmp(argv[i], "--no-exec") == 0 || strcmp(argv[i], "-E") == 0) {
             test_no_exec__ = 1;
         } else if(strcmp(argv[i], "--no-summary") == 0) {
             test_no_summary__ = 1;
@@ -690,12 +780,32 @@ main(int argc, char** argv)
     SetUnhandledExceptionFilter(test_exception_filter__);
 #endif
 
-    /* Run the tests */
+    /* By default, we want to run all tests. */
     if(test_count__ == 0) {
-        /* Run all tests. */
         for(i = 0; test_list__[i].func != NULL; i++)
-            test_run__(&test_list__[i]);
-    } else if(!test_skip_mode__) {
+            tests__[i] = &test_list__[i];
+        test_count__ = test_list_size__;
+    }
+
+    /* Guess whether we want to run unit tests as child processes. */
+    if(test_no_exec__ < 0) {
+        test_no_exec__ = 0;
+
+        if(test_count__ < 1)
+            test_no_exec__ = 1;
+
+#ifdef ACUTEST_WIN__
+        if(IsDebuggerPresent())
+            test_no_exec__ = 1;
+#endif
+#ifdef ACUTEST_LINUX__
+        if(test_is_tracer_present__())
+            test_no_exec__ = 1;
+#endif
+    }
+
+    /* Run the tests */
+    if(!test_skip_mode__) {
         /* Run the listed tests. */
         for(i = 0; i < test_count__; i++)
             test_run__(tests__[i]);
