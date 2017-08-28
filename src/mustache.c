@@ -720,9 +720,14 @@ mustache_compile_tagname(MUSTACHE_BUFFER* insns, const char* name, size_t size)
     unsigned i;
     off_t tok_beg, tok_end;
 
-    for(i = 0; i < size; i++) {
-        if(name[i] == '.')
-            n_tokens++;
+    if(size == 1  &&  name[0] == '.') {
+        /* Implicit iterator. */
+        n_tokens = 0;
+    } else {
+        for(i = 0; i < size; i++) {
+            if(name[i] == '.')
+                n_tokens++;
+        }
     }
 
     if(mustache_buffer_append_num(insns, n_tokens) != 0)
@@ -956,6 +961,12 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         {
             unsigned n_names = (unsigned) mustache_decode_num(insns, reg_pc, &reg_pc);
             unsigned i;
+
+            if(n_names == 0) {
+                /* Implicit iterator. */
+                reg_node = PEEK_NODE();
+                break;
+            }
 
             for(i = 0; i < n_names; i++) {
                 size_t name_len = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
