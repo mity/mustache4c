@@ -127,7 +127,6 @@ mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
     }
 
     num |= data[off++];
-
     *p_off = off;
     return num;
 }
@@ -651,20 +650,13 @@ err:
  */
 #define MUSTACHE_OP_RESOLVE         3
 
-/* Instruction to jump if previous resolving instruction succeeded.
- *
- * Registers: If reg_node is NULL, continues normally.
- *            Otherwise, program counter is changed to address in reg_jmpaddr.
- */
-#define MUSTACHE_OP_ONRESOLVEFAIL   4
-
 /* Instructions to output a node.
  *
  * Registers: If it is not NULL, reg_node determines the node to output.
  *            Otherwise, it is noop.
  */
-#define MUSTACHE_OP_OUTVERBATIM     5
-#define MUSTACHE_OP_OUTESCAPED      6
+#define MUSTACHE_OP_OUTVERBATIM     4
+#define MUSTACHE_OP_OUTESCAPED      5
 
 /* Instruction to enter a node in register reg_node, i.e. to change a lookup
  * context for resolve instructions.
@@ -672,12 +664,19 @@ err:
  * Registers: If it is not NULL, reg_node is pushed to the stack.
  *            Otherwise, program counter is changed to address in reg_jmpaddr.
  */
-#define MUSTACHE_OP_ENTER           7
+#define MUSTACHE_OP_ENTER           6
 
 /* Instruction to leave a node. The top node in the lookup context stack is
  * popped out.
  */
-#define MUSTACHE_OP_LEAVE           8
+#define MUSTACHE_OP_LEAVE           7
+
+/* Instruction to open inverted section.
+ *
+ * Registers: If reg_node is NULL, continues normally.
+ *            Otherwise, program counter is changed to address in reg_jmpaddr.
+ */
+#define MUSTACHE_OP_ENTERINV        8
 
 
 static int
@@ -783,7 +782,6 @@ mustache_compile(const char* templ_data, size_t templ_size,
         }
 
         switch(tag->type) {
-        /* Handle var tags. */
         case MUSTACHE_TAGTYPE_VAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR:
         case MUSTACHE_TAGTYPE_VERBATIMVAR2:
@@ -794,17 +792,27 @@ mustache_compile(const char* templ_data, size_t templ_size,
             break;
 
         case MUSTACHE_TAGTYPE_OPENSECTION:
-        case MUSTACHE_TAGTYPE_OPENSECTIONINV:
             APPEND_NUM(MUSTACHE_OP_RESOLVE_setjmp);
             PUSH_JMP_POS();
             APPEND_TAGNAME(tag);
-            APPEND_NUM((tag->type == MUSTACHE_TAGTYPE_OPENSECTION) ?
-                        MUSTACHE_OP_ENTER : MUSTACHE_OP_ONRESOLVEFAIL);
+            APPEND_NUM(MUSTACHE_OP_ENTER);
+            PUSH_JMP_POS();
             break;
 
         case MUSTACHE_TAGTYPE_CLOSESECTION:
             APPEND_NUM(MUSTACHE_OP_LEAVE);
-            /* Pass through. */
+            APPEND_NUM(insns.n - POP_JMP_POS());
+            jmp_pos = POP_JMP_POS();
+            INSERT_NUM(jmp_pos, insns.n - jmp_pos);
+            break;
+
+        case MUSTACHE_TAGTYPE_OPENSECTIONINV:
+            APPEND_NUM(MUSTACHE_OP_RESOLVE_setjmp);
+            PUSH_JMP_POS();
+            APPEND_TAGNAME(tag);
+            APPEND_NUM(MUSTACHE_OP_ENTERINV);
+            break;
+
         case MUSTACHE_TAGTYPE_CLOSESECTIONINV:
             jmp_pos = POP_JMP_POS();
             INSERT_NUM(jmp_pos, insns.n - jmp_pos);
@@ -866,6 +874,8 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     void* reg_node = NULL;  /* Working node register. */
     int done = 0;
     MUSTACHE_STACK node_stack = { 0 };
+    MUSTACHE_STACK index_stack = { 0 };
+    int ret = 0;
 
 #define PUSH_NODE()                                                         \
         do {                                                                \
@@ -873,7 +883,17 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                 goto err;                                                   \
         } while(0)
 
-#define POP_NODE()          mustache_stack_pop(&node_stack)
+#define POP_NODE()          ((void*) mustache_stack_pop(&node_stack))
+
+#define PEEK_NODE()         ((void*) mustache_stack_peek(&node_stack))
+
+#define PUSH_INDEX(index)                                                   \
+        do {                                                                \
+            if(mustache_stack_push(&index_stack, (uintptr_t) (index)) != 0) \
+                goto err;                                                   \
+        } while(0)
+
+#define POP_INDEX()         ((unsigned) mustache_stack_pop(&index_stack))
 
     reg_node = provider->get_root(provider_data);
     PUSH_NODE();
@@ -886,7 +906,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         {
             size_t n = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
             if(renderer->out_verbatim((const char*)(insns + reg_pc), n, renderer_data) != 0)
-                return -1;
+                goto err;
             reg_pc += n;
             break;
         }
@@ -924,14 +944,6 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             break;
         }
 
-        case MUSTACHE_OP_ONRESOLVEFAIL:
-            if(reg_node == NULL) {
-                /* Resolve succeeded: Noop. */
-            } else {
-                reg_pc = reg_jmpaddr;
-            }
-            break;
-
         case MUSTACHE_OP_OUTVERBATIM:
         case MUSTACHE_OP_OUTESCAPED:
             if(reg_node != NULL) {
@@ -940,19 +952,49 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                 out = (opcode == MUSTACHE_OP_OUTVERBATIM) ?
                             renderer->out_verbatim : renderer->out_escaped;
                 if(provider->dump(reg_node, out, renderer_data, provider_data) != 0)
-                    return -1;
+                    goto err;
             }
             break;
 
         case MUSTACHE_OP_ENTER:
-            if(reg_node != NULL)
+            if(reg_node != NULL) {
                 PUSH_NODE();
-            else
+                reg_node = provider->get_indexed(reg_node, 0, provider_data);
+                if(reg_node != NULL) {
+                    PUSH_NODE();
+                    PUSH_INDEX(0);
+                } else {
+                    (void) POP_NODE();
+                }
+            }
+            if(reg_node == NULL)
                 reg_pc = reg_jmpaddr;
             break;
 
         case MUSTACHE_OP_LEAVE:
-            POP_NODE();
+        {
+            off_t jmp_base = reg_pc;
+            size_t jmp_len = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
+            unsigned index = POP_INDEX();
+
+            (void) POP_NODE();
+            reg_node = provider->get_indexed(PEEK_NODE(), ++index, provider_data);
+            if(reg_node != NULL) {
+                PUSH_NODE();
+                PUSH_INDEX(index);
+                reg_pc = jmp_base - jmp_len;
+            } else {
+                (void) POP_NODE();
+            }
+            break;
+        }
+
+        case MUSTACHE_OP_ENTERINV:
+            if(reg_node == NULL  ||  provider->get_indexed(reg_node, 0, provider_data) == NULL) {
+                /* Resolve failed: Noop, continue normally. */
+            } else {
+                reg_pc = reg_jmpaddr;
+            }
             break;
 
         case MUSTACHE_OP_EXIT:
@@ -961,8 +1003,11 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         }
     }
 
-    return 0;
+    /* Success. */
+    ret = 0;
 
 err:
-    return -1;
+    mustache_stack_free(&node_stack);
+    mustache_stack_free(&index_stack);
+    return ret;
 }

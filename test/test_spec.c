@@ -101,6 +101,22 @@ get_named(void* node, const char* name, size_t size, void* data)
     return NULL;
 }
 
+static void*
+get_indexed(void* node, unsigned index, void* data)
+{
+    JSON_VALUE* value = (JSON_VALUE*) node;
+
+    if(value->type == JSON_NULL || value->type == JSON_FALSE)
+        return NULL;
+
+    if(value->type == JSON_ARRAY  &&  index < value->data.array.n)
+        return (void*) value->data.array.values[index];
+    else if(value->type != JSON_ARRAY  &&  index == 0)
+        return (void*) value;
+
+    return NULL;
+}
+
 static int
 dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data, void* data)
 {
@@ -129,6 +145,7 @@ dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data,
 static const MUSTACHE_DATAPROVIDER provider = {
     get_root,
     get_named,
+    get_indexed,
     dump
 };
 

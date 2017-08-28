@@ -101,10 +101,18 @@ typedef struct MUSTACHE_DATAPROVIDER {
      */
     void* (*get_named)(void* /*node*/, const char* /*name*/, size_t /*size*/, void* /*provider_data*/);
 
-    // TODO: iteration
-    //void* (*get_next)(void* /*node*/, void* /*child_node*/, void* /*provider_data*/);
-    // OR get_indexed()???
-    // OR combination of both???
+    /**
+     * Called to get an indexed item of the current node, or NULL if there is
+     * no such item.
+     *
+     * The main use is for iterating over arrays.
+     *
+     * However note that accordingly to the mustache specification, single
+     * values (except FALSE, NULL, or empty lists) have to be iterable too.
+     * For such simple values, the callback should return the node itself
+     * for index 0, and NULL for any other index.
+     */
+    void* (*get_indexed)(void* /*node*/, unsigned /*index*/, void* /*provider_data*/);
 
     /**
      * Called to output contents of the given node. One of the MUSTACHE_PARSER
