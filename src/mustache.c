@@ -702,10 +702,13 @@ err:
 
 /* Instruction to leave a node. The top node in the lookup context stack is
  * popped out.
+ *
+ * Arg #1: (Relative) setjmp value (NUM) for jumping back for next loop iteration.
  */
 #define MUSTACHE_OP_LEAVE           7
 
 /* Instruction to open inverted section.
+ * Note there is no MUSTACHE_OP_LEAVEINV instruction as it is noop.
  *
  * Registers: If reg_node is NULL, continues normally.
  *            Otherwise, program counter is changed to address in reg_jmpaddr.
@@ -978,12 +981,14 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                     size_t n_nodes = node_stack.n / sizeof(void*);
 
                     while(n_nodes-- > 0) {
-                        reg_node = provider->get_named(nodes[n_nodes], name, name_len, provider_data);
+                        reg_node = provider->get_child_by_name(nodes[n_nodes], 
+                                        name, name_len, provider_data);
                         if(reg_node != NULL)
                             break;
                     }
                 } else if(reg_node != NULL) {
-                    reg_node = provider->get_named(reg_node, name, name_len, provider_data);
+                    reg_node = provider->get_child_by_name(reg_node,
+                                        name, name_len, provider_data);
                 }
             }
             break;
@@ -1004,7 +1009,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         case MUSTACHE_OP_ENTER:
             if(reg_node != NULL) {
                 PUSH_NODE();
-                reg_node = provider->get_indexed(reg_node, 0, provider_data);
+                reg_node = provider->get_child_by_index(reg_node, 0, provider_data);
                 if(reg_node != NULL) {
                     PUSH_NODE();
                     PUSH_INDEX(0);
@@ -1023,7 +1028,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             unsigned index = POP_INDEX();
 
             (void) POP_NODE();
-            reg_node = provider->get_indexed(PEEK_NODE(), ++index, provider_data);
+            reg_node = provider->get_child_by_index(PEEK_NODE(), ++index, provider_data);
             if(reg_node != NULL) {
                 PUSH_NODE();
                 PUSH_INDEX(index);
@@ -1035,7 +1040,8 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
         }
 
         case MUSTACHE_OP_ENTERINV:
-            if(reg_node == NULL  ||  provider->get_indexed(reg_node, 0, provider_data) == NULL) {
+            if(reg_node == NULL  ||  provider->get_child_by_index(reg_node,
+                                                0, provider_data) == NULL) {
                 /* Resolve failed: Noop, continue normally. */
             } else {
                 reg_pc = reg_jmpaddr;

@@ -72,6 +72,31 @@ static const MUSTACHE_RENDERER renderer = {
  *** Implementation of MUSTACHE_DATAPROVIDER interface. ***
  **********************************************************/
 
+static int
+dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data, void* data)
+{
+    JSON_VALUE* value = (JSON_VALUE*) node;
+
+    switch(value->type) {
+    case JSON_NULL:
+    case JSON_FALSE:
+        /* no output. */
+        return 0;
+
+    case JSON_TRUE:
+        return out_fn("<<TRUE>>", strlen("<<TRUE>>"), renderer_data);
+    case JSON_ARRAY:
+        return out_fn("<<ARRAY>>", strlen("<<ARRAY>>"), renderer_data);
+    case JSON_OBJECT:
+        return out_fn("<<OBJECT>>", strlen("<<OBJECT>>"), renderer_data);
+
+    case JSON_STRING:
+        return out_fn(value->data.str, strlen(value->data.str), renderer_data);
+    }
+
+    return 0;
+}
+
 static void*
 get_root(void* data)
 {
@@ -117,36 +142,11 @@ get_indexed(void* node, unsigned index, void* data)
     return NULL;
 }
 
-static int
-dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data, void* data)
-{
-    JSON_VALUE* value = (JSON_VALUE*) node;
-
-    switch(value->type) {
-    case JSON_NULL:
-    case JSON_FALSE:
-        /* no output. */
-        return 0;
-
-    case JSON_TRUE:
-        return out_fn("<<TRUE>>", strlen("<<TRUE>>"), renderer_data);
-    case JSON_ARRAY:
-        return out_fn("<<ARRAY>>", strlen("<<ARRAY>>"), renderer_data);
-    case JSON_OBJECT:
-        return out_fn("<<OBJECT>>", strlen("<<OBJECT>>"), renderer_data);
-
-    case JSON_STRING:
-        return out_fn(value->data.str, strlen(value->data.str), renderer_data);
-    }
-
-    return 0;
-}
-
 static const MUSTACHE_DATAPROVIDER provider = {
+    dump,
     get_root,
     get_named,
-    get_indexed,
-    dump
+    get_indexed
 };
 
 

@@ -90,35 +90,9 @@ typedef struct MUSTACHE_RENDERER {
  */
 typedef struct MUSTACHE_DATAPROVIDER {
     /**
-     * Called once at the start of mustache_process(). It sets the initial
-     * lookup context. */
-    void* (*get_root)(void* /*provider_data*/);
-
-    /**
-     * Called to get named item of the current node, or NULL if there is no item.
-     *
-     * If the node is not of appropriate type (e.g. if it is an array of
-     * values), NULL has to be returned.
-     */
-    void* (*get_named)(void* /*node*/, const char* /*name*/, size_t /*size*/, void* /*provider_data*/);
-
-    /**
-     * Called to get an indexed item of the current node, or NULL if there is
-     * no such item.
-     *
-     * The main use is for iterating over arrays.
-     *
-     * However note that accordingly to the mustache specification, single
-     * values (except FALSE, NULL, or empty lists) have to be iterable too.
-     * For such simple values, the callback should return the node itself
-     * for index 0, and NULL for any other index.
-     */
-    void* (*get_indexed)(void* /*node*/, unsigned /*index*/, void* /*provider_data*/);
-
-    /**
      * Called to output contents of the given node. One of the MUSTACHE_PARSER
      * output functions is provided, depending on the type of the mustache tag
-     * ( {{...}} versus {{{...}}} ). Implementation of dump() may call that
+     * (`{{...}}` versus `{{{...}}}` ). Implementation of dump() may call that
      * function arbitrarily.
      *
      * In many applications, it is not desirable/expected to be able dumping
@@ -131,10 +105,39 @@ typedef struct MUSTACHE_DATAPROVIDER {
      * Implementation of dump() must propagate renderer_data into the
      * callback as its last argument.
      *
-     * Non-zero return value aborts mustache_process().
+     * Non-zero return value aborts mustache_process(). Typically, the
+     * implementations should do so if any call of out_fn callback fails.
      */
     int (*dump)(void* /*node*/, int (* /*out_fn*/)(const char*, size_t, void*),
                 void* /*renderer_data*/, void* /*provider_data*/);
+
+    /**
+     * Called once at the start of mustache_process(). It sets the initial
+     * lookup context. */
+    void* (*get_root)(void* /*provider_data*/);
+
+    /**
+     * Called to get named item of the current node, or NULL if there is no item.
+     *
+     * If the node is not of appropriate type (e.g. if it is an array of
+     * values), NULL has to be returned.
+     */
+    void* (*get_child_by_name)(void* /*node*/, const char* /*name*/,
+                               size_t /*size*/, void* /*provider_data*/);
+
+    /**
+     * Called to get an indexed item of the current node, or NULL if there is
+     * no such item.
+     *
+     * The main use is for iterating over arrays.
+     *
+     * However note that accordingly to the mustache specification, single
+     * values (except FALSE, NULL, or empty lists) have to be iterable too.
+     * For such simple values, the callback should return the node itself
+     * for index 0, and NULL for any other index.
+     */
+    void* (*get_child_by_index)(void* /*node*/, unsigned /*index*/,
+                                void* /*provider_data*/);
 } MUSTACHE_DATAPROVIDER;
 
 
