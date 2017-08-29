@@ -425,7 +425,7 @@ test_delimiters_3(void)
     run(
         "delimiters set outside sections should persist",
         "[\n{{#section}}\n  {{data}}\n  |data|\n{{/section}}\n\n{{= | | =}}\n|#section|\n  {{data}}\n  |data|\n|/section|\n]\n",
-        "{\"section\": true, \"data\": \"I got interpolated.\"}",
+        "{\"data\": \"I got interpolated.\", \"section\": true}",
         NULL,
         "[\n  I got interpolated.\n  |data|\n\n  {{data}}\n  I got interpolated.\n]\n"
     );
@@ -437,7 +437,7 @@ test_delimiters_4(void)
     run(
         "delimiters set outside inverted sections should persist",
         "[\n{{^section}}\n  {{data}}\n  |data|\n{{/section}}\n\n{{= | | =}}\n|^section|\n  {{data}}\n  |data|\n|/section|\n]\n",
-        "{\"section\": false, \"data\": \"I got interpolated.\"}",
+        "{\"data\": \"I got interpolated.\", \"section\": false}",
         NULL,
         "[\n  I got interpolated.\n  |data|\n\n  {{data}}\n  I got interpolated.\n]\n"
     );
@@ -797,7 +797,7 @@ test_interpolation_20(void)
     run(
         "each part of a dotted name should resolve only against its parent",
         "\"{{a.b.c.name}}\" == \"\"",
-        "{\"a\": {\"b\": {}}, \"c\": {\"name\": \"Jim\"}}",
+        "{\"c\": {\"name\": \"Jim\"}, \"a\": {\"b\": {}}}",
         NULL,
         "\"\" == \"\""
     );
@@ -989,7 +989,7 @@ test_inverted_6(void)
     run(
         "multiple inverted sections per template should be permitted",
         "{{^bool}}\n* first\n{{/bool}}\n* {{two}}\n{{^bool}}\n* third\n{{/bool}}\n",
-        "{\"bool\": false, \"two\": \"second\"}",
+        "{\"two\": \"second\", \"bool\": false}",
         NULL,
         "* first\n* second\n* third\n"
     );
@@ -1072,10 +1072,10 @@ test_inverted_13(void)
 {
     run(
         "inverted sections should not alter surrounding whitespace",
-        " | {{^boolean}}    |   {{/boolean}} | \n",
+        " | {{^boolean}}\t|\t{{/boolean}} | \n",
         "{\"boolean\": false}",
         NULL,
-        " |     |    | \n"
+        " | \t|\t | \n"
     );
 }
 
@@ -1217,7 +1217,7 @@ test_partials_4(void)
     run(
         "the greater-than operator should properly recurse",
         "{{>node}}",
-        "{\"content\": \"X\", \"nodes\": [{\"content\": \"Y\", \"nodes\": []}]}",
+        "{\"nodes\": [{\"nodes\": [], \"content\": \"Y\"}], \"content\": \"X\"}",
         "{\"node\": \"{{content}}<{{#nodes}}{{>node}}{{/nodes}}>\"}",
         "X<Y<>>"
     );
@@ -1231,7 +1231,7 @@ test_partials_5(void)
         "| {{>partial}} |",
         "{}",
         "{\"partial\": \"\\t|\\t\"}",
-        "|  |    |"
+        "| \t|\t |"
     );
 }
 
@@ -1349,7 +1349,7 @@ test_sections_4(void)
     run(
         "all elements on the context stack should be accessible",
         "{{#a}}\n{{one}}\n{{#b}}\n{{one}}{{two}}{{one}}\n{{#c}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{#d}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{#e}}\n{{one}}{{two}}{{three}}{{four}}{{five}}{{four}}{{three}}{{two}}{{one}}\n{{/e}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{/d}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{/c}}\n{{one}}{{two}}{{one}}\n{{/b}}\n{{one}}\n{{/a}}\n",
-        "{\"a\": {\"one\": 1}, \"e\": {\"five\": 5}, \"d\": {\"four\": 4}, \"b\": {\"two\": 2}, \"c\": {\"three\": 3}}",
+        "{\"d\": {\"four\": 4}, \"e\": {\"five\": 5}, \"c\": {\"three\": 3}, \"a\": {\"one\": 1}, \"b\": {\"two\": 2}}",
         NULL,
         "1\n121\n12321\n1234321\n123454321\n1234321\n12321\n121\n1\n"
     );
@@ -1385,7 +1385,7 @@ test_sections_7(void)
     run(
         "multiple sections per template should be permitted",
         "{{#bool}}\n* first\n{{/bool}}\n* {{two}}\n{{#bool}}\n* third\n{{/bool}}\n",
-        "{\"bool\": true, \"two\": \"second\"}",
+        "{\"two\": \"second\", \"bool\": true}",
         NULL,
         "* first\n* second\n* third\n"
     );
@@ -1516,10 +1516,10 @@ test_sections_18(void)
 {
     run(
         "sections should not alter surrounding whitespace",
-        " | {{#boolean}}    |   {{/boolean}} | \n",
+        " | {{#boolean}}\t|\t{{/boolean}} | \n",
         "{\"boolean\": true}",
         NULL,
-        " |     |    | \n"
+        " | \t|\t | \n"
     );
 }
 

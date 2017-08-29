@@ -66,7 +66,7 @@ useful. The current state of main features (using the terminology of the
 
  * [ ] **Partials** (`{{>foo}}`):
        Mostly implemented. Partials do not yet inherit their indentation
-       from parent template. That's why four [spec tests][spec-partials] are
+       from parent template. That's why three [spec tests][spec-partials] are
        failing.
 
  * [x] **Set Delimiter** (`{{=<% %>=}}`):

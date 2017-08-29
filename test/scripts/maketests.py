@@ -15,7 +15,7 @@ def c_str(str):
     str = str.replace("\\", "\\\\")
     str = str.replace("\n", "\\n")
     str = str.replace("\r", "\\r")
-    str = str.replace("\t", "\t")
+    str = str.replace("\t", "\\t")
     str = str.replace("\"", "\\\"")
     return "\"" + str + "\""
 
