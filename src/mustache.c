@@ -212,7 +212,8 @@ typedef enum MUSTACHE_TAGTYPE {
     MUSTACHE_TAGTYPE_OPENSECTIONINV,    /* {{^ section }} */
     MUSTACHE_TAGTYPE_CLOSESECTION,      /* {{/ section }} */
     MUSTACHE_TAGTYPE_CLOSESECTIONINV,
-    MUSTACHE_TAGTYPE_PARTIAL            /* {{> partial }} */
+    MUSTACHE_TAGTYPE_PARTIAL,           /* {{> partial }} */
+    MUSTACHE_TAGTYPE_INDENT      /* for internal purposes. */
 } MUSTACHE_TAGTYPE;
 
 typedef struct MUSTACHE_TAGINFO {
@@ -407,6 +408,17 @@ mustache_parse(const char* templ_data, size_t templ_size,
     off_t col = 1;
     MUSTACHE_TAGINFO current_tag;
     MUSTACHE_BUFFER tags = { 0 };
+
+    /* If this template will ever be used as a partial, it may inherit an
+     * extra indentation from parent template, so we mark every line beginning
+     * with the dummy tag for further processing in mustache_compile(). */
+    if(off < templ_size) {
+        current_tag.type = MUSTACHE_TAGTYPE_INDENT;
+        current_tag.beg = off;
+        current_tag.end = off;
+        if(mustache_buffer_append(&tags, &current_tag, sizeof(MUSTACHE_TAGINFO)) != 0)
+            goto err;
+    }
 
     current_tag.type = MUSTACHE_TAGTYPE_NONE;
 
@@ -607,6 +619,15 @@ mustache_parse(const char* templ_data, size_t templ_size,
             if(off < templ_size  &&  templ_data[off] == '\n')
                 off++;
 
+            if(current_tag.type == MUSTACHE_TAGTYPE_NONE  &&  off < templ_size) {
+                current_tag.type = MUSTACHE_TAGTYPE_INDENT;
+                current_tag.beg = off;
+                current_tag.end = off;
+                if(mustache_buffer_append(&tags, &current_tag, sizeof(MUSTACHE_TAGINFO)) != 0)
+                    goto err;
+                current_tag.type = MUSTACHE_TAGTYPE_NONE;
+            }
+
             line++;
             col = 1;
         } else {
@@ -718,9 +739,15 @@ err:
 /* Instruction to enter a partial.
  *
  * Arg #1: Length of the partial name (NUM).
- * Arg #2: The partial name.
+ * Arg #2: The partial name (STR).
+ * Arg #3: Length of the indentation string (NUM).
+ * Arg #4: Indentation, i.e. string composed of whitespace characters (STR).
  */
 #define MUSTACHE_OP_PARTIAL         9
+
+/* Instruction to insert extra indentation (inherited from parent templates).
+ */
+#define MUSTACHE_OP_INDENT          10
 
 
 static int
@@ -775,6 +802,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
     MUSTACHE_STACK jmp_pos_stack = { 0 };
     int done = 0;
     int success = 0;
+    size_t indent_len;
 
     if(parser == NULL)
         parser = &default_parser;
@@ -869,6 +897,15 @@ mustache_compile(const char* templ_data, size_t templ_size,
             APPEND_NUM(MUSTACHE_OP_PARTIAL);
             APPEND_NUM(tag->name_end - tag->name_beg);
             APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
+            indent_len = 0;
+            while(MUSTACHE_ISWHITESPACE(templ_data[tag->beg + indent_len]))
+                indent_len++;
+            APPEND_NUM(indent_len);
+            APPEND(templ_data + tag->beg, indent_len);
+            break;
+
+        case MUSTACHE_TAGTYPE_INDENT:
+            APPEND_NUM(MUSTACHE_OP_INDENT);
             break;
 
         case MUSTACHE_TAGTYPE_NONE:
@@ -927,6 +964,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     MUSTACHE_STACK node_stack = { 0 };
     MUSTACHE_STACK index_stack = { 0 };
     MUSTACHE_STACK partial_stack = { 0 };
+    MUSTACHE_BUFFER indent_buffer = { 0 };
     int ret = 0;
 
 #define PUSH_NODE()                                                         \
@@ -1060,16 +1098,29 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 
         case MUSTACHE_OP_PARTIAL:
         {
-            size_t name_len = mustache_decode_num(insns, reg_pc, &reg_pc);
-            const char* name = (const char*) (insns + reg_pc);
+            size_t name_len;
+            const char* name;
+            size_t indent_len;
+            const char* indent;
             MUSTACHE_TEMPLATE* partial;
 
+            name_len = mustache_decode_num(insns, reg_pc, &reg_pc);
+            name = (const char*) (insns + reg_pc);
             reg_pc += name_len;
+
+            indent_len = mustache_decode_num(insns, reg_pc, &reg_pc);
+            indent = (const char*) (insns + reg_pc);
+            reg_pc += indent_len;
+
             partial = provider->get_partial(name, name_len, provider_data);
             if(partial != NULL) {
                 if(mustache_stack_push(&partial_stack, (uintptr_t) insns) != 0)
                     goto err;
                 if(mustache_stack_push(&partial_stack, (uintptr_t) reg_pc) != 0)
+                    goto err;
+                if(mustache_stack_push(&partial_stack, (uintptr_t) indent_len) != 0)
+                    goto err;
+                if(mustache_buffer_append(&indent_buffer, indent, indent_len) != 0)
                     goto err;
                 reg_pc = 0;
                 insns = (uint8_t*) partial;
@@ -1077,12 +1128,21 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             break;
         }
 
+        case MUSTACHE_OP_INDENT:
+            if(renderer->out_verbatim((const char*)(indent_buffer.data),
+                                indent_buffer.n, renderer_data) != 0)
+                goto err;
+            break;
+
         case MUSTACHE_OP_EXIT:
             if(mustache_stack_is_empty(&partial_stack)) {
                 done = 1;
             } else {
+                size_t indent_len = (size_t) mustache_stack_pop(&partial_stack);
                 reg_pc = (off_t) mustache_stack_pop(&partial_stack);
                 insns = (uint8_t*) mustache_stack_pop(&partial_stack);
+
+                indent_buffer.n -= indent_len;
             }
             break;
         }
@@ -1095,5 +1155,6 @@ err:
     mustache_stack_free(&node_stack);
     mustache_stack_free(&index_stack);
     mustache_stack_free(&partial_stack);
+    mustache_buffer_free(&indent_buffer);
     return ret;
 }

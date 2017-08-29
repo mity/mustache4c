@@ -48,9 +48,8 @@ file `mustache.h`][mustache.h].
 
 ### Specification Conformance
 
-Mustache4C is still in the development process but it is already becoming
-useful. The current state of main features (using the terminology of the
-[{{mustache}} specification 1.1.3][spec]) is as follows.
+Mustache4C is still young but it has already reached the conformance with
+[{{mustache}} specification 1.1.3][spec]).
 
  * [x] **Variables** (`{{foo}}`, `{{{bar}}}`):
        Implemented. All [spec tests][spec-interpolation] are passing.
@@ -64,18 +63,16 @@ useful. The current state of main features (using the terminology of the
  * [x] **Comments** (`{{! foo bar }}`):
        Implemented. All [spec tests][spec-comments] are passing.
 
- * [ ] **Partials** (`{{>foo}}`):
-       Mostly implemented. Partials do not yet inherit their indentation
-       from parent template. That's why three [spec tests][spec-partials] are
-       failing.
+ * [x] **Partials** (`{{>foo}}`):
+       Implemented. All [spec tests][spec-partials] are passing.
 
  * [x] **Set Delimiter** (`{{=<% %>=}}`):
        Implemented. All [spec tests][spec-delimiters] are passing.
 
 ### Extensions
 
-When seen as useful, some extensions may be implemented after the conformance
-with the specification is reached.
+Currently none.
+
 
 ### Note about Lambdas
 
