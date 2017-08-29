@@ -72,6 +72,17 @@ static const MUSTACHE_RENDERER renderer = {
  *** Implementation of MUSTACHE_DATAPROVIDER interface. ***
  **********************************************************/
 
+typedef struct PARTIAL_INFO {
+    char name[32];
+    MUSTACHE_TEMPLATE* templ;
+} PARTIAL_INFO;
+
+typedef struct PROVIDER_DATA {
+    JSON_VALUE* root;
+    PARTIAL_INFO partial_dict[8];
+} PROVIDER_DATA;
+
+
 static int
 dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data, void* data)
 {
@@ -100,8 +111,8 @@ dump(void* node, int (*out_fn)(const char*, size_t, void*), void* renderer_data,
 static void*
 get_root(void* data)
 {
-    /* We pass the JSON root value as the provider data. */
-    return data;
+    PROVIDER_DATA* provider_data = (PROVIDER_DATA*) data;
+    return provider_data->root;
 }
 
 static void*
@@ -142,11 +153,27 @@ get_indexed(void* node, unsigned index, void* data)
     return NULL;
 }
 
+static MUSTACHE_TEMPLATE*
+get_partial(const char* name, size_t size, void* data)
+{
+    PROVIDER_DATA* provider_data = (PROVIDER_DATA*) data;
+    int i;
+
+    for(i = 0; provider_data->partial_dict[i].templ != NULL; i++) {
+        const PARTIAL_INFO* info = (const PARTIAL_INFO*) &provider_data->partial_dict[i];
+
+        if(size == strlen(info->name)  &&  strncmp(name, info->name, size) == 0)
+            return info->templ;
+    }
+    return NULL;
+}
+
 static const MUSTACHE_DATAPROVIDER provider = {
     dump,
     get_root,
     get_named,
-    get_indexed
+    get_indexed,
+    get_partial
 };
 
 
@@ -162,11 +189,42 @@ run(const char* desc, const char* templ, const char* data, const char* partials,
     BUFFER buf = { 0 };
 
     json_root = json_parse(data);
-    TEST_CHECK(json_root != NULL);
+    if(!TEST_CHECK(json_root != NULL))
+        return;
 
     t = mustache_compile(templ, strlen(templ), &parser, (void*) &buf, 0);
-    if(t != NULL)
-        mustache_process(t, &renderer, (void*) &buf, &provider, json_root);
+    if(t != NULL) {
+        PROVIDER_DATA provider_data = { 0 };
+        int i;
+
+        provider_data.root = json_root;
+
+        if(partials != NULL) {
+            JSON_VALUE* json_partials;
+
+            json_partials = json_parse(partials);
+            if(!TEST_CHECK(json_partials != NULL))
+                return;
+            if(!TEST_CHECK(json_partials->type == JSON_OBJECT))
+                return;
+
+            for(i = 0; i < json_partials->data.obj.n; i++) {
+                strcpy(provider_data.partial_dict[i].name, json_partials->data.obj.keys[i]);
+                provider_data.partial_dict[i].templ = mustache_compile(
+                            json_partials->data.obj.values[i]->data.str,
+                            strlen(json_partials->data.obj.values[i]->data.str),
+                            NULL, NULL, 0);
+                TEST_CHECK(provider_data.partial_dict[i].templ != NULL);
+            }
+        }
+
+        mustache_process(t, &renderer, (void*) &buf, &provider, &provider_data);
+
+        for(i = 0; provider_data.partial_dict[i].templ != NULL; i++) {
+            const PARTIAL_INFO* info = (const PARTIAL_INFO*) &provider_data.partial_dict[i];
+            mustache_release(info->templ);
+        }
+    }
 
     if(!TEST_CHECK_(t != NULL  &&
                     buf.n == strlen(expected)  &&

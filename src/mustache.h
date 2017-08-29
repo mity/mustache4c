@@ -33,6 +33,9 @@ extern "C" {
 #endif
 
 
+typedef struct MUSTACHE_TEMPLATE MUSTACHE_TEMPLATE;
+
+
 #define MUSTACHE_ERR_SUCCESS                (0)
 #define MUSTACHE_ERR_DANGLINGTAGOPENER      (1)
 #define MUSTACHE_ERR_DANGLINGTAGCLOSER      (2)
@@ -138,10 +141,19 @@ typedef struct MUSTACHE_DATAPROVIDER {
      */
     void* (*get_child_by_index)(void* /*node*/, unsigned /*index*/,
                                 void* /*provider_data*/);
+
+    /**
+     * Called to get a partial template when mustache_process() handles
+     * a partial tag `{{>name}}`.
+     *
+     * Implementation should perform lookup for the template (compile it, if
+     * it is not), and return the template handle.
+     *
+     * If the lookup fails, the implementation reports it by returning NULL.
+     */
+    MUSTACHE_TEMPLATE* (*get_partial)(const char* /*name*/, size_t /*size*/,
+                                      void* /*provider_data*/);
 } MUSTACHE_DATAPROVIDER;
-
-
-typedef struct MUSTACHE_TEMPLATE MUSTACHE_TEMPLATE;
 
 
 /**

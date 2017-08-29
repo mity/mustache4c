@@ -253,7 +253,7 @@ mustache_validate_tagname(const char* tagname, size_t size)
     if(size == 1  &&  tagname[0] == '.')
         return 0;
 
-    /* Verify there is no whitespace and that '.' is used only as a delimtiter
+    /* Verify there is no whitespace and that '.' is used only as a delimiter
      * of non-empty tokens. */
     if(tagname[0] == '.'  ||  tagname[size-1] == '.')
         return -1;
@@ -715,6 +715,13 @@ err:
  */
 #define MUSTACHE_OP_ENTERINV        8
 
+/* Instruction to enter a partial.
+ *
+ * Arg #1: Length of the partial name (NUM).
+ * Arg #2: The partial name.
+ */
+#define MUSTACHE_OP_PARTIAL         9
+
 
 static int
 mustache_compile_tagname(MUSTACHE_BUFFER* insns, const char* name, size_t size)
@@ -775,8 +782,6 @@ mustache_compile(const char* templ_data, size_t templ_size,
     /* Collect all tags from the template. */
     if(mustache_parse(templ_data, templ_size, parser, parser_data, &tags, &n_tags) != 0)
         goto err;
-
-    // TODO: Check correctness (compatibility of respective section openings and closings.)
 
     /* Build the template */
 #define APPEND(data, n)                                                                 \
@@ -860,7 +865,11 @@ mustache_compile(const char* templ_data, size_t templ_size,
             INSERT_NUM(jmp_pos, insns.n - jmp_pos);
             break;
 
-        // TODO: MUSTACHE_TAGTYPE_PARTIAL
+        case MUSTACHE_TAGTYPE_PARTIAL:
+            APPEND_NUM(MUSTACHE_OP_PARTIAL);
+            APPEND_NUM(tag->name_end - tag->name_beg);
+            APPEND(templ_data + tag->name_beg, tag->name_end - tag->name_beg);
+            break;
 
         case MUSTACHE_TAGTYPE_NONE:
             APPEND_NUM(MUSTACHE_OP_EXIT);
@@ -917,6 +926,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     int done = 0;
     MUSTACHE_STACK node_stack = { 0 };
     MUSTACHE_STACK index_stack = { 0 };
+    MUSTACHE_STACK partial_stack = { 0 };
     int ret = 0;
 
 #define PUSH_NODE()                                                         \
@@ -1048,8 +1058,32 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
             }
             break;
 
+        case MUSTACHE_OP_PARTIAL:
+        {
+            size_t name_len = mustache_decode_num(insns, reg_pc, &reg_pc);
+            const char* name = (const char*) (insns + reg_pc);
+            MUSTACHE_TEMPLATE* partial;
+
+            reg_pc += name_len;
+            partial = provider->get_partial(name, name_len, provider_data);
+            if(partial != NULL) {
+                if(mustache_stack_push(&partial_stack, (uintptr_t) insns) != 0)
+                    goto err;
+                if(mustache_stack_push(&partial_stack, (uintptr_t) reg_pc) != 0)
+                    goto err;
+                reg_pc = 0;
+                insns = (uint8_t*) partial;
+            }
+            break;
+        }
+
         case MUSTACHE_OP_EXIT:
-            done = 1;
+            if(mustache_stack_is_empty(&partial_stack)) {
+                done = 1;
+            } else {
+                reg_pc = (off_t) mustache_stack_pop(&partial_stack);
+                insns = (uint8_t*) mustache_stack_pop(&partial_stack);
+            }
             break;
         }
     }
@@ -1060,5 +1094,6 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 err:
     mustache_stack_free(&node_stack);
     mustache_stack_free(&index_stack);
+    mustache_stack_free(&partial_stack);
     return ret;
 }

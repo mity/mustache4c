@@ -9,16 +9,16 @@
 
 ## What is {{mustache}}
 
-[{{mustache}}] is logic-less templating system. The term "logic-less" means
+[{{mustache}}] is logic-less template system. The term "logic-less" means
 it lacks any explicit `if` or `else` conditionals or `for` loops, however both
 looping and conditional evaluation can be achieved using section tags
 processing lists.
 
-It is named {{mustache}} because of heav use of curly braces (`{` and `}`)
+It is named {{mustache}} because of heavy use of curly braces (`{` and `}`)
 which resemble a sideways mustache.
 
 [{{mustache(5)}}][man5] can provide you an idea about {{mustache}} capabilities
-and its syntax. More advanced use and understading can be reached if you
+and its syntax. More advanced use and understanding can be reached if you
 immerse in [{{mustache}} official specification][spec].
 
 
@@ -49,7 +49,7 @@ file `mustache.h`][mustache.h].
 ### Specification Conformance
 
 Mustache4C is still in the development process but it is already becoming
-usefull. The current state of main features (using the terminology of the
+useful. The current state of main features (using the terminology of the
 [{{mustache}} specification 1.1.3][spec]) is as follows.
 
  * [x] **Variables** (`{{foo}}`, `{{{bar}}}`):
@@ -65,28 +65,27 @@ usefull. The current state of main features (using the terminology of the
        Implemented. All [spec tests][spec-comments] are passing.
 
  * [ ] **Partials** (`{{>foo}}`):
-       Not yet implemented, but planned.
+       Mostly implemented. Partials do not yet inherit their indentation
+       from parent template. That's why four [spec tests][spec-partials] are
+       failing.
 
  * [x] **Set Delimiter** (`{{=<% %>=}}`):
-       Implemented. Two [spec tests][spec-delimiters] are still failing, but
-       those require Partials to be implemented.
+       Implemented. All [spec tests][spec-delimiters] are passing.
 
+### Extensions
+
+When seen as useful, some extensions may be implemented after the conformance
+with the specification is reached.
 
 ### Note about Lambdas
 
-The design of Mustache4C in general supports generating or retriving some data
+The design of Mustache4C in general supports generating or retrieving some data
 in run-time, which more or less allows application to support lambda. But such
 implementation is and will be on the application using Mustache4C, and the
 implementation likely shall be limited to things needed by the application.
 
 Full lambda support as seen in many modern scripting languages is not and
 will not be supported by Mustache4C.
-
-
-### Extensions
-
-When seen as useful, some extensions may be implemented after the conformance
-with the specification is reached.
 
 
 ## License
