@@ -965,7 +965,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
     MUSTACHE_STACK index_stack = { 0 };
     MUSTACHE_STACK partial_stack = { 0 };
     MUSTACHE_BUFFER indent_buffer = { 0 };
-    int ret = 0;
+    int ret = -1;
 
 #define PUSH_NODE()                                                         \
         do {                                                                \
