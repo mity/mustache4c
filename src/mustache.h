@@ -167,7 +167,6 @@ typedef struct MUSTACHE_DATAPROVIDER {
  * @param templ_size Length of the template text.
  * @param parser Pointer to structure with parser callbacks. May be @c NULL.
  * @param parser_data Pointer just propagated into the parser callbacks.
- * @param allocator Pointer to structure with custom allocator callbacks. May be @c NULL.
  * @param flags Unused, use zero.
  * @return Pointer to the compiled template, or @c NULL on an error.
  */
@@ -188,7 +187,8 @@ void mustache_release(MUSTACHE_TEMPLATE* t);
  * The function outputs (via MUSTACHE_RENDERER::out_verbatim()) most of the
  * text of the template. Whenever it reaches a mustache tag, it calls
  * appropriate callback of MUSTACHE_DATAPROVIDER to change lookup context
- * or to output contents of the current context.
+ * or a callback of MUSTACHE_RENDERER to output contents of the current
+ * context.
  *
  * @param t The template.
  * @param renderer Pointer to structure with output callbacks.
