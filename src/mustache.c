@@ -29,7 +29,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>  /* for off_t */
 
 
 #ifdef _MSC_VER
@@ -64,7 +63,7 @@ mustache_buffer_free(MUSTACHE_BUFFER* buf)
 }
 
 static int
-mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t n)
+mustache_buffer_insert(MUSTACHE_BUFFER* buf, size_t off, const void* data, size_t n)
 {
     if(buf->n + n > buf->alloc) {
         size_t new_alloc = (buf->n + n) * 2;
@@ -89,11 +88,11 @@ mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t
 static inline int
 mustache_buffer_append(MUSTACHE_BUFFER* buf, const void* data, size_t n)
 {
-    return mustache_buffer_insert(buf, (off_t) buf->n, data, n);
+    return mustache_buffer_insert(buf, (size_t) buf->n, data, n);
 }
 
 static int
-mustache_buffer_insert_num(MUSTACHE_BUFFER* buf, off_t off, uint64_t num)
+mustache_buffer_insert_num(MUSTACHE_BUFFER* buf, size_t off, uint64_t num)
 {
     uint8_t tmp[16];
     size_t n = 0;
@@ -117,7 +116,7 @@ mustache_buffer_append_num(MUSTACHE_BUFFER* buf, uint64_t num)
 }
 
 static uint64_t
-mustache_decode_num(const uint8_t* data, off_t off, off_t* p_off)
+mustache_decode_num(const uint8_t* data, size_t off, size_t* p_off)
 {
     uint64_t num = 0;
 
@@ -218,12 +217,12 @@ typedef enum MUSTACHE_TAGTYPE {
 
 typedef struct MUSTACHE_TAGINFO {
     MUSTACHE_TAGTYPE type;
-    off_t line;
-    off_t col;
-    off_t beg;
-    off_t end;
-    off_t name_beg;
-    off_t name_end;
+    size_t line;
+    size_t col;
+    size_t beg;
+    size_t end;
+    size_t name_beg;
+    size_t name_end;
 } MUSTACHE_TAGINFO;
 
 static void
@@ -231,12 +230,17 @@ mustache_parse_error(int err_code, const char* msg,
                     unsigned line, unsigned column, void* parser_data)
 {
     /* noop */
+    (void)err_code;
+    (void)msg;
+    (void)line;
+    (void)column;
+    (void)parser_data;
 }
 
 static int
 mustache_is_std_closer(const char* closer, size_t closer_len)
 {
-    off_t off;
+    size_t off;
 
     for(off = 0; off < closer_len; off++) {
         if(closer[off] != '}')
@@ -249,7 +253,7 @@ mustache_is_std_closer(const char* closer, size_t closer_len)
 static int
 mustache_validate_tagname(const char* tagname, size_t size)
 {
-    off_t off;
+    size_t off;
 
     if(size == 1  &&  tagname[0] == '.')
         return 0;
@@ -350,8 +354,8 @@ mustache_parse_delimiters(const char* delim_spec, size_t size,
                           char* opener, size_t* p_opener_len,
                           char* closer, size_t* p_closer_len)
 {
-    off_t opener_beg, opener_end;
-    off_t closer_beg, closer_end;
+    size_t opener_beg, opener_end;
+    size_t closer_beg, closer_end;
 
     opener_beg = 0;
 
@@ -403,9 +407,9 @@ mustache_parse(const char* templ_data, size_t templ_size,
     char closer[MUSTACHE_MAXCLOSERLENGTH] = MUSTACHE_DEFAULTCLOSER;
     size_t opener_len;
     size_t closer_len;
-    off_t off = 0;
-    off_t line = 1;
-    off_t col = 1;
+    size_t off = 0;
+    size_t line = 1;
+    size_t col = 1;
     MUSTACHE_TAGINFO current_tag;
     MUSTACHE_BUFFER tags = { 0 };
 
@@ -542,7 +546,7 @@ mustache_parse(const char* templ_data, size_t templ_size,
                current_tag.type != MUSTACHE_TAGTYPE_VERBATIMVAR2 &&
                (current_tag.end >= templ_size || MUSTACHE_ISNEWLINE(templ_data[current_tag.end])))
             {
-                off_t tmp_off = current_tag.beg;
+                size_t tmp_off = current_tag.beg;
                 while(tmp_off > 0 && MUSTACHE_ISWHITESPACE(templ_data[tmp_off-1]))
                     tmp_off--;
                 if(tmp_off == 0 || MUSTACHE_ISNEWLINE(templ_data[tmp_off-1])) {
@@ -755,7 +759,7 @@ mustache_compile_tagname(MUSTACHE_BUFFER* insns, const char* name, size_t size)
 {
     unsigned n_tokens = 1;
     unsigned i;
-    off_t tok_beg, tok_end;
+    size_t tok_beg, tok_end;
 
     if(size == 1  &&  name[0] == '.') {
         /* Implicit iterator. */
@@ -792,11 +796,13 @@ mustache_compile(const char* templ_data, size_t templ_size,
                  const MUSTACHE_PARSER* parser, void* parser_data,
                  unsigned flags)
 {
+    (void)flags;
+
     static const MUSTACHE_PARSER default_parser = { mustache_parse_error };
     MUSTACHE_TAGINFO* tags = NULL;
     unsigned n_tags;
-    off_t off;
-    off_t jmp_pos;
+    size_t off;
+    size_t jmp_pos;
     MUSTACHE_TAGINFO* tag;
     MUSTACHE_BUFFER insns = { 0 };
     MUSTACHE_STACK jmp_pos_stack = { 0 };
@@ -843,7 +849,7 @@ mustache_compile(const char* templ_data, size_t templ_size,
                 goto err;                                                               \
         } while(0)
 
-#define POP_JMP_POS()       ((off_t) mustache_stack_pop(&jmp_pos_stack))
+#define POP_JMP_POS()       ((size_t) mustache_stack_pop(&jmp_pos_stack))
 
     off = 0;
     tag = &tags[0];
@@ -957,8 +963,8 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                  const MUSTACHE_DATAPROVIDER* provider, void* provider_data)
 {
     const uint8_t* insns = (const uint8_t*) t;
-    off_t reg_pc = 0;       /* Program counter register. */
-    off_t reg_jmpaddr;      /* Jump target address register. */
+    size_t reg_pc = 0;       /* Program counter register. */
+    size_t reg_jmpaddr;      /* Jump target address register. */
     void* reg_node = NULL;  /* Working node register. */
     int done = 0;
     MUSTACHE_STACK node_stack = { 0 };
@@ -1071,7 +1077,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
 
         case MUSTACHE_OP_LEAVE:
         {
-            off_t jmp_base = reg_pc;
+            size_t jmp_base = reg_pc;
             size_t jmp_len = (size_t) mustache_decode_num(insns, reg_pc, &reg_pc);
             unsigned index = POP_INDEX();
 
@@ -1139,7 +1145,7 @@ mustache_process(const MUSTACHE_TEMPLATE* t,
                 done = 1;
             } else {
                 size_t indent_len = (size_t) mustache_stack_pop(&partial_stack);
-                reg_pc = (off_t) mustache_stack_pop(&partial_stack);
+                reg_pc = (size_t) mustache_stack_pop(&partial_stack);
                 insns = (uint8_t*) mustache_stack_pop(&partial_stack);
 
                 indent_buffer.n -= indent_len;
