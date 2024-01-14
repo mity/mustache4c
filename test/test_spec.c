@@ -396,6 +396,18 @@ test_comments_11(void)
 }
 
 static void
+test_comments_12(void)
+{
+    run(
+        "comments must never render, even if variable with same name exists",
+        "comments never show: >{{! comment }}<",
+        "{\"! comment\": 1, \"! comment \": 2, \"!comment\": 3, \"comment\": 4}",
+        NULL,
+        "comments never show: ><"
+    );
+}
+
+static void
 test_delimiters_1(void)
 {
     run(
@@ -425,7 +437,7 @@ test_delimiters_3(void)
     run(
         "delimiters set outside sections should persist",
         "[\n{{#section}}\n  {{data}}\n  |data|\n{{/section}}\n\n{{= | | =}}\n|#section|\n  {{data}}\n  |data|\n|/section|\n]\n",
-        "{\"data\": \"I got interpolated.\", \"section\": true}",
+        "{\"section\": true, \"data\": \"I got interpolated.\"}",
         NULL,
         "[\n  I got interpolated.\n  |data|\n\n  {{data}}\n  I got interpolated.\n]\n"
     );
@@ -437,7 +449,7 @@ test_delimiters_4(void)
     run(
         "delimiters set outside inverted sections should persist",
         "[\n{{^section}}\n  {{data}}\n  |data|\n{{/section}}\n\n{{= | | =}}\n|^section|\n  {{data}}\n  |data|\n|/section|\n]\n",
-        "{\"data\": \"I got interpolated.\", \"section\": false}",
+        "{\"section\": false, \"data\": \"I got interpolated.\"}",
         NULL,
         "[\n  I got interpolated.\n  |data|\n\n  {{data}}\n  I got interpolated.\n]\n"
     );
@@ -699,6 +711,42 @@ static void
 test_interpolation_12(void)
 {
     run(
+        "nulls should interpolate as the empty string",
+        "I ({{cannot}}) be seen!",
+        "{\"cannot\": null}",
+        NULL,
+        "I () be seen!"
+    );
+}
+
+static void
+test_interpolation_13(void)
+{
+    run(
+        "nulls should interpolate as the empty string",
+        "I ({{{cannot}}}) be seen!",
+        "{\"cannot\": null}",
+        NULL,
+        "I () be seen!"
+    );
+}
+
+static void
+test_interpolation_14(void)
+{
+    run(
+        "nulls should interpolate as the empty string",
+        "I ({{&cannot}}) be seen!",
+        "{\"cannot\": null}",
+        NULL,
+        "I () be seen!"
+    );
+}
+
+static void
+test_interpolation_15(void)
+{
+    run(
         "failed context lookups should default to empty strings",
         "I ({{cannot}}) be seen!",
         "{}",
@@ -708,7 +756,7 @@ test_interpolation_12(void)
 }
 
 static void
-test_interpolation_13(void)
+test_interpolation_16(void)
 {
     run(
         "failed context lookups should default to empty strings",
@@ -720,7 +768,7 @@ test_interpolation_13(void)
 }
 
 static void
-test_interpolation_14(void)
+test_interpolation_17(void)
 {
     run(
         "failed context lookups should default to empty strings",
@@ -732,7 +780,7 @@ test_interpolation_14(void)
 }
 
 static void
-test_interpolation_15(void)
+test_interpolation_18(void)
 {
     run(
         "dotted names should be considered a form of shorthand for sections",
@@ -744,7 +792,7 @@ test_interpolation_15(void)
 }
 
 static void
-test_interpolation_16(void)
+test_interpolation_19(void)
 {
     run(
         "dotted names should be considered a form of shorthand for sections",
@@ -756,7 +804,7 @@ test_interpolation_16(void)
 }
 
 static void
-test_interpolation_17(void)
+test_interpolation_20(void)
 {
     run(
         "dotted names should be considered a form of shorthand for sections",
@@ -768,7 +816,7 @@ test_interpolation_17(void)
 }
 
 static void
-test_interpolation_18(void)
+test_interpolation_21(void)
 {
     run(
         "dotted names should be functional to any level of nesting",
@@ -780,7 +828,7 @@ test_interpolation_18(void)
 }
 
 static void
-test_interpolation_19(void)
+test_interpolation_22(void)
 {
     run(
         "any falsey value prior to the last part of the name should yield ''",
@@ -792,19 +840,19 @@ test_interpolation_19(void)
 }
 
 static void
-test_interpolation_20(void)
+test_interpolation_23(void)
 {
     run(
         "each part of a dotted name should resolve only against its parent",
         "\"{{a.b.c.name}}\" == \"\"",
-        "{\"c\": {\"name\": \"Jim\"}, \"a\": {\"b\": {}}}",
+        "{\"a\": {\"b\": {}}, \"c\": {\"name\": \"Jim\"}}",
         NULL,
         "\"\" == \"\""
     );
 }
 
 static void
-test_interpolation_21(void)
+test_interpolation_24(void)
 {
     run(
         "the first part of a dotted name should resolve as any other name",
@@ -816,7 +864,79 @@ test_interpolation_21(void)
 }
 
 static void
-test_interpolation_22(void)
+test_interpolation_25(void)
+{
+    run(
+        "dotted names should be resolved against former resolutions",
+        "{{#a}}{{b.c}}{{/a}}",
+        "{\"a\": {\"b\": {}}, \"b\": {\"c\": \"ERROR\"}}",
+        NULL,
+        ""
+    );
+}
+
+static void
+test_interpolation_26(void)
+{
+    run(
+        "unadorned tags should interpolate content into the template",
+        "Hello, {{.}}!\n",
+        "\"world\"",
+        NULL,
+        "Hello, world!\n"
+    );
+}
+
+static void
+test_interpolation_27(void)
+{
+    run(
+        "basic interpolation should be html escaped",
+        "These characters should be HTML escaped: {{.}}\n",
+        "\"& \\\" < >\"",
+        NULL,
+        "These characters should be HTML escaped: &amp; &quot; &lt; &gt;\n"
+    );
+}
+
+static void
+test_interpolation_28(void)
+{
+    run(
+        "triple mustaches should interpolate without html escaping",
+        "These characters should not be HTML escaped: {{{.}}}\n",
+        "\"& \\\" < >\"",
+        NULL,
+        "These characters should not be HTML escaped: & \" < >\n"
+    );
+}
+
+static void
+test_interpolation_29(void)
+{
+    run(
+        "ampersand should interpolate without html escaping",
+        "These characters should not be HTML escaped: {{&.}}\n",
+        "\"& \\\" < >\"",
+        NULL,
+        "These characters should not be HTML escaped: & \" < >\n"
+    );
+}
+
+static void
+test_interpolation_30(void)
+{
+    run(
+        "integers should interpolate seamlessly",
+        "\"{{.}} miles an hour!\"",
+        "85",
+        NULL,
+        "\"85 miles an hour!\""
+    );
+}
+
+static void
+test_interpolation_31(void)
 {
     run(
         "interpolation should not alter surrounding whitespace",
@@ -828,7 +948,7 @@ test_interpolation_22(void)
 }
 
 static void
-test_interpolation_23(void)
+test_interpolation_32(void)
 {
     run(
         "interpolation should not alter surrounding whitespace",
@@ -840,7 +960,7 @@ test_interpolation_23(void)
 }
 
 static void
-test_interpolation_24(void)
+test_interpolation_33(void)
 {
     run(
         "interpolation should not alter surrounding whitespace",
@@ -852,7 +972,7 @@ test_interpolation_24(void)
 }
 
 static void
-test_interpolation_25(void)
+test_interpolation_34(void)
 {
     run(
         "standalone interpolation should not alter surrounding whitespace",
@@ -864,7 +984,7 @@ test_interpolation_25(void)
 }
 
 static void
-test_interpolation_26(void)
+test_interpolation_35(void)
 {
     run(
         "standalone interpolation should not alter surrounding whitespace",
@@ -876,7 +996,7 @@ test_interpolation_26(void)
 }
 
 static void
-test_interpolation_27(void)
+test_interpolation_36(void)
 {
     run(
         "standalone interpolation should not alter surrounding whitespace",
@@ -888,7 +1008,7 @@ test_interpolation_27(void)
 }
 
 static void
-test_interpolation_28(void)
+test_interpolation_37(void)
 {
     run(
         "superfluous in-tag whitespace should be ignored",
@@ -900,7 +1020,7 @@ test_interpolation_28(void)
 }
 
 static void
-test_interpolation_29(void)
+test_interpolation_38(void)
 {
     run(
         "superfluous in-tag whitespace should be ignored",
@@ -912,7 +1032,7 @@ test_interpolation_29(void)
 }
 
 static void
-test_interpolation_30(void)
+test_interpolation_39(void)
 {
     run(
         "superfluous in-tag whitespace should be ignored",
@@ -951,6 +1071,18 @@ static void
 test_inverted_3(void)
 {
     run(
+        "null is falsey",
+        "\"{{^null}}This should be rendered.{{/null}}\"",
+        "{\"null\": null}",
+        NULL,
+        "\"This should be rendered.\""
+    );
+}
+
+static void
+test_inverted_4(void)
+{
+    run(
         "objects and hashes should behave like truthy values",
         "\"{{^context}}Hi {{name}}.{{/context}}\"",
         "{\"context\": {\"name\": \"Joe\"}}",
@@ -960,7 +1092,7 @@ test_inverted_3(void)
 }
 
 static void
-test_inverted_4(void)
+test_inverted_5(void)
 {
     run(
         "lists should behave like truthy values",
@@ -972,7 +1104,7 @@ test_inverted_4(void)
 }
 
 static void
-test_inverted_5(void)
+test_inverted_6(void)
 {
     run(
         "empty lists should behave like falsey values",
@@ -984,19 +1116,19 @@ test_inverted_5(void)
 }
 
 static void
-test_inverted_6(void)
+test_inverted_7(void)
 {
     run(
         "multiple inverted sections per template should be permitted",
         "{{^bool}}\n* first\n{{/bool}}\n* {{two}}\n{{^bool}}\n* third\n{{/bool}}\n",
-        "{\"two\": \"second\", \"bool\": false}",
+        "{\"bool\": false, \"two\": \"second\"}",
         NULL,
         "* first\n* second\n* third\n"
     );
 }
 
 static void
-test_inverted_7(void)
+test_inverted_8(void)
 {
     run(
         "nested falsey sections should have their contents rendered",
@@ -1008,7 +1140,7 @@ test_inverted_7(void)
 }
 
 static void
-test_inverted_8(void)
+test_inverted_9(void)
 {
     run(
         "nested truthy sections should be omitted",
@@ -1020,7 +1152,7 @@ test_inverted_8(void)
 }
 
 static void
-test_inverted_9(void)
+test_inverted_10(void)
 {
     run(
         "failed context lookups should be considered falsey",
@@ -1032,7 +1164,7 @@ test_inverted_9(void)
 }
 
 static void
-test_inverted_10(void)
+test_inverted_11(void)
 {
     run(
         "dotted names should be valid for inverted section tags",
@@ -1044,7 +1176,7 @@ test_inverted_10(void)
 }
 
 static void
-test_inverted_11(void)
+test_inverted_12(void)
 {
     run(
         "dotted names should be valid for inverted section tags",
@@ -1056,7 +1188,7 @@ test_inverted_11(void)
 }
 
 static void
-test_inverted_12(void)
+test_inverted_13(void)
 {
     run(
         "dotted names that cannot be resolved should be considered falsey",
@@ -1068,7 +1200,7 @@ test_inverted_12(void)
 }
 
 static void
-test_inverted_13(void)
+test_inverted_14(void)
 {
     run(
         "inverted sections should not alter surrounding whitespace",
@@ -1080,7 +1212,7 @@ test_inverted_13(void)
 }
 
 static void
-test_inverted_14(void)
+test_inverted_15(void)
 {
     run(
         "inverted should not alter internal whitespace",
@@ -1092,7 +1224,7 @@ test_inverted_14(void)
 }
 
 static void
-test_inverted_15(void)
+test_inverted_16(void)
 {
     run(
         "single-line sections should not alter surrounding whitespace",
@@ -1104,7 +1236,7 @@ test_inverted_15(void)
 }
 
 static void
-test_inverted_16(void)
+test_inverted_17(void)
 {
     run(
         "standalone lines should be removed from the template",
@@ -1116,7 +1248,7 @@ test_inverted_16(void)
 }
 
 static void
-test_inverted_17(void)
+test_inverted_18(void)
 {
     run(
         "standalone indented lines should be removed from the template",
@@ -1128,7 +1260,7 @@ test_inverted_17(void)
 }
 
 static void
-test_inverted_18(void)
+test_inverted_19(void)
 {
     run(
         "\"\\r\\n\" should be considered a newline for standalone tags",
@@ -1140,7 +1272,7 @@ test_inverted_18(void)
 }
 
 static void
-test_inverted_19(void)
+test_inverted_20(void)
 {
     run(
         "standalone tags should not require a newline to precede them",
@@ -1152,7 +1284,7 @@ test_inverted_19(void)
 }
 
 static void
-test_inverted_20(void)
+test_inverted_21(void)
 {
     run(
         "standalone tags should not require a newline to follow them",
@@ -1164,7 +1296,7 @@ test_inverted_20(void)
 }
 
 static void
-test_inverted_21(void)
+test_inverted_22(void)
 {
     run(
         "superfluous in-tag whitespace should be ignored",
@@ -1217,7 +1349,7 @@ test_partials_4(void)
     run(
         "the greater-than operator should properly recurse",
         "{{>node}}",
-        "{\"nodes\": [{\"nodes\": [], \"content\": \"Y\"}], \"content\": \"X\"}",
+        "{\"content\": \"X\", \"nodes\": [{\"content\": \"Y\", \"nodes\": []}]}",
         "{\"node\": \"{{content}}<{{#nodes}}{{>node}}{{/nodes}}>\"}",
         "X<Y<>>"
     );
@@ -1335,6 +1467,18 @@ static void
 test_sections_3(void)
 {
     run(
+        "null is falsey",
+        "\"{{#null}}This should not be rendered.{{/null}}\"",
+        "{\"null\": null}",
+        NULL,
+        "\"\""
+    );
+}
+
+static void
+test_sections_4(void)
+{
+    run(
         "objects and hashes should be pushed onto the context stack",
         "\"{{#context}}Hi {{name}}.{{/context}}\"",
         "{\"context\": {\"name\": \"Joe\"}}",
@@ -1344,19 +1488,55 @@ test_sections_3(void)
 }
 
 static void
-test_sections_4(void)
+test_sections_5(void)
 {
     run(
-        "all elements on the context stack should be accessible",
-        "{{#a}}\n{{one}}\n{{#b}}\n{{one}}{{two}}{{one}}\n{{#c}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{#d}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{#e}}\n{{one}}{{two}}{{three}}{{four}}{{five}}{{four}}{{three}}{{two}}{{one}}\n{{/e}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{/d}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{/c}}\n{{one}}{{two}}{{one}}\n{{/b}}\n{{one}}\n{{/a}}\n",
-        "{\"d\": {\"four\": 4}, \"e\": {\"five\": 5}, \"c\": {\"three\": 3}, \"a\": {\"one\": 1}, \"b\": {\"two\": 2}}",
+        "names missing in the current context are looked up in the stack",
+        "\"{{#sec}}{{a}}, {{b}}, {{c.d}}{{/sec}}\"",
+        "{\"a\": \"foo\", \"b\": \"wrong\", \"sec\": {\"b\": \"bar\"}, \"c\": {\"d\": \"baz\"}}",
         NULL,
-        "1\n121\n12321\n1234321\n123454321\n1234321\n12321\n121\n1\n"
+        "\"foo, bar, baz\""
     );
 }
 
 static void
-test_sections_5(void)
+test_sections_6(void)
+{
+    run(
+        "non-false sections have their value at the top of context,\naccessible as {{.}} or through the parent context. this gives\na simple way to display content conditionally if a variable exists.\n",
+        "\"{{#foo}}{{.}} is {{foo}}{{/foo}}\"",
+        "{\"foo\": \"bar\"}",
+        NULL,
+        "\"bar is bar\""
+    );
+}
+
+static void
+test_sections_7(void)
+{
+    run(
+        "all elements on the context stack should be accessible within lists",
+        "{{#tops}}{{#middles}}{{tname.lower}}{{mname}}.{{#bottoms}}{{tname.upper}}{{mname}}{{bname}}.{{/bottoms}}{{/middles}}{{/tops}}",
+        "{\"tops\": [{\"tname\": {\"upper\": \"A\", \"lower\": \"a\"}, \"middles\": [{\"mname\": \"1\", \"bottoms\": [{\"bname\": \"x\"}, {\"bname\": \"y\"}]}]}]}",
+        NULL,
+        "a1.A1x.A1y."
+    );
+}
+
+static void
+test_sections_8(void)
+{
+    run(
+        "all elements on the context stack should be accessible",
+        "{{#a}}\n{{one}}\n{{#b}}\n{{one}}{{two}}{{one}}\n{{#c}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{#d}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{#five}}\n{{one}}{{two}}{{three}}{{four}}{{five}}{{four}}{{three}}{{two}}{{one}}\n{{one}}{{two}}{{three}}{{four}}{{.}}6{{.}}{{four}}{{three}}{{two}}{{one}}\n{{one}}{{two}}{{three}}{{four}}{{five}}{{four}}{{three}}{{two}}{{one}}\n{{/five}}\n{{one}}{{two}}{{three}}{{four}}{{three}}{{two}}{{one}}\n{{/d}}\n{{one}}{{two}}{{three}}{{two}}{{one}}\n{{/c}}\n{{one}}{{two}}{{one}}\n{{/b}}\n{{one}}\n{{/a}}\n",
+        "{\"a\": {\"one\": 1}, \"b\": {\"two\": 2}, \"c\": {\"three\": 3, \"d\": {\"four\": 4, \"five\": 5}}}",
+        NULL,
+        "1\n121\n12321\n1234321\n123454321\n12345654321\n123454321\n1234321\n12321\n121\n1\n"
+    );
+}
+
+static void
+test_sections_9(void)
 {
     run(
         "lists should be iterated; list items should visit the context stack",
@@ -1368,7 +1548,7 @@ test_sections_5(void)
 }
 
 static void
-test_sections_6(void)
+test_sections_10(void)
 {
     run(
         "empty lists should behave like falsey values",
@@ -1380,19 +1560,19 @@ test_sections_6(void)
 }
 
 static void
-test_sections_7(void)
+test_sections_11(void)
 {
     run(
         "multiple sections per template should be permitted",
         "{{#bool}}\n* first\n{{/bool}}\n* {{two}}\n{{#bool}}\n* third\n{{/bool}}\n",
-        "{\"two\": \"second\", \"bool\": true}",
+        "{\"bool\": true, \"two\": \"second\"}",
         NULL,
         "* first\n* second\n* third\n"
     );
 }
 
 static void
-test_sections_8(void)
+test_sections_12(void)
 {
     run(
         "nested truthy sections should have their contents rendered",
@@ -1404,7 +1584,7 @@ test_sections_8(void)
 }
 
 static void
-test_sections_9(void)
+test_sections_13(void)
 {
     run(
         "nested falsey sections should be omitted",
@@ -1416,7 +1596,7 @@ test_sections_9(void)
 }
 
 static void
-test_sections_10(void)
+test_sections_14(void)
 {
     run(
         "failed context lookups should be considered falsey",
@@ -1428,7 +1608,7 @@ test_sections_10(void)
 }
 
 static void
-test_sections_11(void)
+test_sections_15(void)
 {
     run(
         "implicit iterators should directly interpolate strings",
@@ -1440,7 +1620,7 @@ test_sections_11(void)
 }
 
 static void
-test_sections_12(void)
+test_sections_16(void)
 {
     run(
         "implicit iterators should cast integers to strings and interpolate",
@@ -1452,7 +1632,7 @@ test_sections_12(void)
 }
 
 static void
-test_sections_13(void)
+test_sections_17(void)
 {
     run(
         "implicit iterators should cast decimals to strings and interpolate",
@@ -1464,7 +1644,7 @@ test_sections_13(void)
 }
 
 static void
-test_sections_14(void)
+test_sections_18(void)
 {
     run(
         "implicit iterators should allow iterating over nested arrays",
@@ -1476,7 +1656,55 @@ test_sections_14(void)
 }
 
 static void
-test_sections_15(void)
+test_sections_19(void)
+{
+    run(
+        "implicit iterators with basic interpolation should be html escaped",
+        "\"{{#list}}({{.}}){{/list}}\"",
+        "{\"list\": [\"&\", \"\\\"\", \"<\", \">\"]}",
+        NULL,
+        "\"(&amp;)(&quot;)(&lt;)(&gt;)\""
+    );
+}
+
+static void
+test_sections_20(void)
+{
+    run(
+        "implicit iterators in triple mustache should interpolate without html escaping",
+        "\"{{#list}}({{{.}}}){{/list}}\"",
+        "{\"list\": [\"&\", \"\\\"\", \"<\", \">\"]}",
+        NULL,
+        "\"(&)(\")(<)(>)\""
+    );
+}
+
+static void
+test_sections_21(void)
+{
+    run(
+        "implicit iterators in an ampersand tag should interpolate without html escaping",
+        "\"{{#list}}({{&.}}){{/list}}\"",
+        "{\"list\": [\"&\", \"\\\"\", \"<\", \">\"]}",
+        NULL,
+        "\"(&)(\")(<)(>)\""
+    );
+}
+
+static void
+test_sections_22(void)
+{
+    run(
+        "implicit iterators should work on root-level lists",
+        "\"{{#.}}({{value}}){{/.}}\"",
+        "[{\"value\": \"a\"}, {\"value\": \"b\"}]",
+        NULL,
+        "\"(a)(b)\""
+    );
+}
+
+static void
+test_sections_23(void)
 {
     run(
         "dotted names should be valid for section tags",
@@ -1488,7 +1716,7 @@ test_sections_15(void)
 }
 
 static void
-test_sections_16(void)
+test_sections_24(void)
 {
     run(
         "dotted names should be valid for section tags",
@@ -1500,7 +1728,7 @@ test_sections_16(void)
 }
 
 static void
-test_sections_17(void)
+test_sections_25(void)
 {
     run(
         "dotted names that cannot be resolved should be considered falsey",
@@ -1512,7 +1740,7 @@ test_sections_17(void)
 }
 
 static void
-test_sections_18(void)
+test_sections_26(void)
 {
     run(
         "sections should not alter surrounding whitespace",
@@ -1524,7 +1752,7 @@ test_sections_18(void)
 }
 
 static void
-test_sections_19(void)
+test_sections_27(void)
 {
     run(
         "sections should not alter internal whitespace",
@@ -1536,7 +1764,7 @@ test_sections_19(void)
 }
 
 static void
-test_sections_20(void)
+test_sections_28(void)
 {
     run(
         "single-line sections should not alter surrounding whitespace",
@@ -1548,7 +1776,7 @@ test_sections_20(void)
 }
 
 static void
-test_sections_21(void)
+test_sections_29(void)
 {
     run(
         "standalone lines should be removed from the template",
@@ -1560,7 +1788,7 @@ test_sections_21(void)
 }
 
 static void
-test_sections_22(void)
+test_sections_30(void)
 {
     run(
         "indented standalone lines should be removed from the template",
@@ -1572,7 +1800,7 @@ test_sections_22(void)
 }
 
 static void
-test_sections_23(void)
+test_sections_31(void)
 {
     run(
         "\"\\r\\n\" should be considered a newline for standalone tags",
@@ -1584,7 +1812,7 @@ test_sections_23(void)
 }
 
 static void
-test_sections_24(void)
+test_sections_32(void)
 {
     run(
         "standalone tags should not require a newline to precede them",
@@ -1596,7 +1824,7 @@ test_sections_24(void)
 }
 
 static void
-test_sections_25(void)
+test_sections_33(void)
 {
     run(
         "standalone tags should not require a newline to follow them",
@@ -1608,7 +1836,7 @@ test_sections_25(void)
 }
 
 static void
-test_sections_26(void)
+test_sections_34(void)
 {
     run(
         "superfluous in-tag whitespace should be ignored",
@@ -1631,6 +1859,7 @@ TEST_LIST = {
     { "comments-9", test_comments_9 },
     { "comments-10", test_comments_10 },
     { "comments-11", test_comments_11 },
+    { "comments-12", test_comments_12 },
     { "delimiters-1", test_delimiters_1 },
     { "delimiters-2", test_delimiters_2 },
     { "delimiters-3", test_delimiters_3 },
@@ -1675,6 +1904,15 @@ TEST_LIST = {
     { "interpolation-28", test_interpolation_28 },
     { "interpolation-29", test_interpolation_29 },
     { "interpolation-30", test_interpolation_30 },
+    { "interpolation-31", test_interpolation_31 },
+    { "interpolation-32", test_interpolation_32 },
+    { "interpolation-33", test_interpolation_33 },
+    { "interpolation-34", test_interpolation_34 },
+    { "interpolation-35", test_interpolation_35 },
+    { "interpolation-36", test_interpolation_36 },
+    { "interpolation-37", test_interpolation_37 },
+    { "interpolation-38", test_interpolation_38 },
+    { "interpolation-39", test_interpolation_39 },
     { "inverted-1", test_inverted_1 },
     { "inverted-2", test_inverted_2 },
     { "inverted-3", test_inverted_3 },
@@ -1696,6 +1934,7 @@ TEST_LIST = {
     { "inverted-19", test_inverted_19 },
     { "inverted-20", test_inverted_20 },
     { "inverted-21", test_inverted_21 },
+    { "inverted-22", test_inverted_22 },
     { "partials-1", test_partials_1 },
     { "partials-2", test_partials_2 },
     { "partials-3", test_partials_3 },
@@ -1733,6 +1972,14 @@ TEST_LIST = {
     { "sections-24", test_sections_24 },
     { "sections-25", test_sections_25 },
     { "sections-26", test_sections_26 },
+    { "sections-27", test_sections_27 },
+    { "sections-28", test_sections_28 },
+    { "sections-29", test_sections_29 },
+    { "sections-30", test_sections_30 },
+    { "sections-31", test_sections_31 },
+    { "sections-32", test_sections_32 },
+    { "sections-33", test_sections_33 },
+    { "sections-34", test_sections_34 },
     { 0 }
 };
 
