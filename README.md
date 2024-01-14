@@ -45,8 +45,7 @@ file `mustache.h`][mustache.h].
 
 ### Specification Conformance
 
-Mustache4C is still young but it has already reached the conformance with
-[{{mustache}} specification 1.1.3][spec].
+Mustache4C is compliant to [{{mustache}} specification 1.3.0][spec].
 
  * [x] **Variables** (`{{foo}}`, `{{{bar}}}`):
        Implemented. All [spec tests][spec-interpolation] are passing.
