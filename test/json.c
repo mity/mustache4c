@@ -203,7 +203,7 @@ after_key:
             if(stack_top > 0)
                 json_add_value(stack[stack_top-1], key, v);
 
-            if(v->type == JSON_OBJECT || v->type == JSON_ARRAY) {
+            if(v->type == JSON_OBJECT || v->type == JSON_ARRAY || stack_top == 0) {
                 stack[stack_top] = v;
                 stack_top++;
             }
