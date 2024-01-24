@@ -2,7 +2,7 @@
  * Mustache4C
  * (http://github.com/mity/mustache4c)
  *
- * Copyright (c) 2017 Martin Mitas
+ * Copyright (c) 2017 Martin Mitáš
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
