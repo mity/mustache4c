@@ -78,11 +78,13 @@ mustache_buffer_insert(MUSTACHE_BUFFER* buf, off_t off, const void* data, size_t
         buf->alloc = new_alloc;
     }
 
-    if(off < buf->n)
-        memmove(buf->data + off + n, buf->data + off, buf->n - off);
+    if(n > 0) {
+        if(off < buf->n)
+            memmove(buf->data + off + n, buf->data + off, buf->n - off);
 
-    memcpy(buf->data + off, data, n);
-    buf->n += n;
+        memcpy(buf->data + off, data, n);
+        buf->n += n;
+    }
     return 0;
 }
 
