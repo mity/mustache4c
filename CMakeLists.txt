@@ -1,6 +1,11 @@
 
-cmake_minimum_required(VERSION 3.5)
-project(Mustache4C C)
+cmake_minimum_required(VERSION 3.20)
+
+project(Mustache4C 
+    VERSION "0.0.1"
+    HOMEPAGE_URL "https://github.com/mity/mustache4c"
+    LANGUAGES C
+)
 
 
 set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo MinSizeRel)
